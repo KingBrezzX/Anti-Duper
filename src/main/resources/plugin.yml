@@ -1,31 +1,31 @@
 name: BedrockAntiDupe
-version: 1.0.0
+version: 2.0.0
 main: xyz.zyrex.bedrockantidupe.BedrockAntiDupe
-api-version: '26.2'
+api-version: '1.21'
 
-description: Advanced event-driven anti-duplication protection for Paper servers.
-author: ZyrexSMP
+authors:
+  - KingBrezzX
+
+description: >
+  Advanced transaction-based anti-duplication protection
+  with inventory, shulker, shop and economy rollback detection.
+
+website: https://github.com/KingBrezzX/Anti-Duper
 
 softdepend:
-  - floodgate
-  - Geyser-Spigot
   - Vault
-  - PlaceholderAPI
+  - Floodgate
+  - Geyser-Spigot
 
 commands:
   antidupe:
     description: BedrockAntiDupe administration command
-    usage: /antidupe <reload|status|check|violations>
+    usage: /antidupe <reload|status|scan|cleanup>
     aliases:
-      - badupe
-      - dupeguard
+      - bad
+      - bedrockantidupe
 
 permissions:
-
   bedrockantidupe.admin:
-    description: Allows administration of BedrockAntiDupe
-    default: op
-
-  bedrockantidupe.alert:
-    description: Receive BedrockAntiDupe staff alerts
+    description: Access to BedrockAntiDupe administration commands
     default: op
