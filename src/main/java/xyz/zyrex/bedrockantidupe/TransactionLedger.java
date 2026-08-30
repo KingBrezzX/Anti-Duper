@@ -1,111 +1,73 @@
 package xyz.zyrex.bedrockantidupe;
 
+import org.bukkit.Location;
 import org.bukkit.Material;
-import org.bukkit.entity.Player;
-import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.PlayerInventory;
+import org.bukkit.entity.Player;
 
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * TransactionLedger
+ * Central transaction ledger for the anti-dupe system.
  *
- * Keeps short-lived snapshots of protected inventories.
+ * The ledger keeps short-lived transaction snapshots and
+ * provenance information so suspicious inventory changes
+ * can be correlated with later shop/economy transactions.
  *
- * Purpose:
- * - Detect unexpected item increases.
- * - Detect unexpected protected-container increases.
- * - Compare inventory state before/after risky operations.
- * - Avoid scanning the entire world.
- * - Keep the ledger memory bounded.
- *
- * This class does not punish players by itself.
- * BedrockAntiDupe decides what action to take.
+ * It deliberately does NOT assume that every inventory change
+ * is a dupe. Detection must be performed by DupeDetector.
  */
 public final class TransactionLedger {
 
-    private static final int DEFAULT_MAX_SNAPSHOT_ITEMS = 256;
+    private final BedrockAntiDupe plugin;
 
-    private final Map<UUID, InventorySnapshot> snapshots =
+    private final Map<UUID, TransactionSnapshot> activeSnapshots =
             new ConcurrentHashMap<>();
 
-    private final Map<UUID, Long> transactionIds =
+    private final Map<String, TransactionRecord> transactions =
             new ConcurrentHashMap<>();
 
-    private final int maxSnapshotItems;
+    private final Map<String, ItemProvenance> provenance =
+            new ConcurrentHashMap<>();
 
-    public TransactionLedger() {
-        this(DEFAULT_MAX_SNAPSHOT_ITEMS);
-    }
+    public TransactionLedger(
+            BedrockAntiDupe plugin
+    ) {
 
-    public TransactionLedger(int maxSnapshotItems) {
-
-        this.maxSnapshotItems = Math.max(
-                32,
-                maxSnapshotItems
-        );
+        this.plugin = plugin;
     }
 
     /**
-     * Creates a snapshot of the player's inventory.
+     * Starts tracking an inventory transaction.
      */
-    public InventorySnapshot snapshot(Player player) {
+    public TransactionSnapshot begin(
+            Player player,
+            String source
+    ) {
 
         if (player == null) {
-            return null;
-        }
-
-        Inventory inventory = player.getInventory();
-
-        Map<Integer, ItemFingerprint> items =
-                new HashMap<>();
-
-        ItemStack[] contents =
-                inventory.getContents();
-
-        int stored = 0;
-
-        for (int slot = 0;
-             slot < contents.length && stored < maxSnapshotItems;
-             slot++) {
-
-            ItemStack item = contents[slot];
-
-            if (isEmpty(item)) {
-                continue;
-            }
-
-            items.put(
-                    slot,
-                    ItemFingerprint.from(item)
+            throw new IllegalArgumentException(
+                    "player cannot be null"
             );
-
-            stored++;
         }
 
-        long transactionId =
-                transactionIds.merge(
-                        player.getUniqueId(),
-                        1L,
-                        Long::sum
-                );
+        String transactionId =
+                UUID.randomUUID().toString();
 
-        InventorySnapshot snapshot =
-                new InventorySnapshot(
-                        player.getUniqueId(),
+        TransactionSnapshot snapshot =
+                createSnapshot(
+                        player,
                         transactionId,
-                        System.currentTimeMillis(),
-                        items
+                        source
                 );
 
-        snapshots.put(
+        activeSnapshots.put(
                 player.getUniqueId(),
                 snapshot
         );
@@ -114,449 +76,508 @@ public final class TransactionLedger {
     }
 
     /**
-     * Gets the latest snapshot for a player.
+     * Finishes the currently active transaction.
      */
-    public InventorySnapshot getSnapshot(
-            UUID uuid
-    ) {
-
-        return snapshots.get(uuid);
-    }
-
-    /**
-     * Removes a player's snapshot.
-     */
-    public void remove(UUID uuid) {
-
-        if (uuid == null) {
-            return;
-        }
-
-        snapshots.remove(uuid);
-        transactionIds.remove(uuid);
-    }
-
-    /**
-     * Clears every snapshot.
-     */
-    public void clear() {
-
-        snapshots.clear();
-        transactionIds.clear();
-    }
-
-    /**
-     * Compare a previous snapshot against the current inventory.
-     */
-    public TransactionResult compare(
+    public TransactionRecord finish(
             Player player
     ) {
 
         if (player == null) {
-
-            return TransactionResult.invalid(
-                    "player is null"
-            );
+            return null;
         }
 
-        InventorySnapshot before =
-                snapshots.get(
+        TransactionSnapshot before =
+                activeSnapshots.remove(
                         player.getUniqueId()
                 );
 
         if (before == null) {
-
-            return TransactionResult.invalid(
-                    "no previous snapshot"
-            );
+            return null;
         }
 
         InventorySnapshot after =
-                snapshotWithoutReplacing(
-                        player,
-                        before.transactionId()
+                captureInventory(
+                        player
                 );
 
-        return compare(
-                before,
-                after
+        TransactionRecord record =
+                new TransactionRecord(
+                        before.transactionId(),
+                        player.getUniqueId(),
+                        before.source(),
+                        before.inventory(),
+                        after,
+                        System.currentTimeMillis()
+                );
+
+        transactions.put(
+                before.transactionId(),
+                record
+        );
+
+        return record;
+    }
+
+    /**
+     * Cancels a transaction without registering an after-state.
+     */
+    public void cancel(
+            Player player
+    ) {
+
+        if (player == null) {
+            return;
+        }
+
+        activeSnapshots.remove(
+                player.getUniqueId()
         );
     }
 
     /**
-     * Compare two snapshots.
+     * Registers item provenance.
      */
-    public TransactionResult compare(
-            InventorySnapshot before,
-            InventorySnapshot after
+    public void registerProvenance(
+            ItemProvenance itemProvenance
     ) {
 
-        if (before == null || after == null) {
-
-            return TransactionResult.invalid(
-                    "missing snapshot"
-            );
+        if (itemProvenance == null) {
+            return;
         }
 
-        Map<Material, Integer> beforeTotals =
-                aggregate(before);
-
-        Map<Material, Integer> afterTotals =
-                aggregate(after);
-
-        Map<Material, Integer> increases =
-                new HashMap<>();
-
-        Map<Material, Integer> decreases =
-                new HashMap<>();
-
-        for (Material material : union(
-                beforeTotals,
-                afterTotals
-        )) {
-
-            int oldAmount =
-                    beforeTotals.getOrDefault(
-                            material,
-                            0
-                    );
-
-            int newAmount =
-                    afterTotals.getOrDefault(
-                            material,
-                            0
-                    );
-
-            if (newAmount > oldAmount) {
-
-                increases.put(
-                        material,
-                        newAmount - oldAmount
-                );
-            }
-
-            if (oldAmount > newAmount) {
-
-                decreases.put(
-                        material,
-                        oldAmount - newAmount
-                );
-            }
-        }
-
-        return new TransactionResult(
-                true,
-                before,
-                after,
-                increases,
-                decreases
+        provenance.put(
+                itemProvenance.provenanceId()
+                        .toString(),
+                itemProvenance
         );
     }
 
     /**
-     * Detects whether a protected item unexpectedly increased.
-     *
-     * This is deliberately conservative.
+     * Gets provenance by ID.
      */
-    public boolean hasUnexpectedProtectedIncrease(
-            TransactionResult result
+    public ItemProvenance getProvenance(
+            String provenanceId
     ) {
 
-        if (result == null || !result.valid()) {
-            return false;
+        if (provenanceId == null) {
+            return null;
         }
 
-        for (Material material :
-                result.increases().keySet()) {
-
-            if (isProtectedMaterial(material)) {
-                return true;
-            }
-        }
-
-        return false;
+        return provenance.get(
+                provenanceId
+        );
     }
 
     /**
-     * Returns only protected-item increases.
+     * Gets a transaction by ID.
      */
-    public Map<Material, Integer> getProtectedIncreases(
-            TransactionResult result
+    public TransactionRecord getTransaction(
+            String transactionId
     ) {
 
-        if (result == null || !result.valid()) {
-
-            return Collections.emptyMap();
+        if (transactionId == null) {
+            return null;
         }
 
-        Map<Material, Integer> output =
-                new HashMap<>();
-
-        for (Map.Entry<Material, Integer> entry :
-                result.increases().entrySet()) {
-
-            if (isProtectedMaterial(
-                    entry.getKey()
-            )) {
-
-                output.put(
-                        entry.getKey(),
-                        entry.getValue()
-                );
-            }
-        }
-
-        return output;
+        return transactions.get(
+                transactionId
+        );
     }
 
     /**
-     * Protected containers and container-like items.
+     * Returns an immutable view of registered transactions.
      */
-    public boolean isProtectedMaterial(
-            Material material
-    ) {
+    public Map<String, TransactionRecord>
+    getTransactions() {
 
-        if (material == null) {
-            return false;
-        }
-
-        String name = material.name();
-
-        if (name.contains("SHULKER_BOX")) {
-            return true;
-        }
-
-        return switch (material) {
-
-            case CHEST,
-                 TRAPPED_CHEST,
-                 ENDER_CHEST,
-                 BARREL,
-                 HOPPER,
-                 DROPPER,
-                 DISPENSER,
-                 FURNACE,
-                 BLAST_FURNACE,
-                 SMOKER,
-                 CRAFTER -> true;
-
-            default -> false;
-        };
+        return Collections.unmodifiableMap(
+                transactions
+        );
     }
 
     /**
-     * Snapshot without replacing the player's stored snapshot.
+     * Returns the active transaction for a player.
      */
-    private InventorySnapshot snapshotWithoutReplacing(
+    public TransactionSnapshot getActiveSnapshot(
+            UUID playerId
+    ) {
+
+        if (playerId == null) {
+            return null;
+        }
+
+        return activeSnapshots.get(
+                playerId
+        );
+    }
+
+    /**
+     * Creates an inventory snapshot.
+     */
+    private TransactionSnapshot createSnapshot(
             Player player,
-            long transactionId
+            String transactionId,
+            String source
     ) {
 
-        Inventory inventory =
+        return new TransactionSnapshot(
+                transactionId,
+                player.getUniqueId(),
+                source == null
+                        ? "UNKNOWN"
+                        : source,
+                captureInventory(player),
+                System.currentTimeMillis()
+        );
+    }
+
+    /**
+     * Captures the player's complete inventory state.
+     *
+     * This includes:
+     * - main inventory
+     * - armor
+     * - offhand
+     *
+     * ItemStack objects are cloned so later modifications
+     * do not mutate the stored snapshot.
+     */
+    public InventorySnapshot captureInventory(
+            Player player
+    ) {
+
+        PlayerInventory inventory =
                 player.getInventory();
 
-        Map<Integer, ItemFingerprint> items =
-                new HashMap<>();
+        List<ItemStack> contents =
+                cloneContents(
+                        inventory.getStorageContents()
+                );
 
-        ItemStack[] contents =
-                inventory.getContents();
+        List<ItemStack> armor =
+                cloneContents(
+                        inventory.getArmorContents()
+                );
 
-        int stored = 0;
+        ItemStack offhand =
+                inventory.getItemInOffHand();
 
-        for (int slot = 0;
-             slot < contents.length && stored < maxSnapshotItems;
-             slot++) {
-
-            ItemStack item = contents[slot];
-
-            if (isEmpty(item)) {
-                continue;
-            }
-
-            items.put(
-                    slot,
-                    ItemFingerprint.from(item)
-            );
-
-            stored++;
+        if (offhand != null) {
+            offhand = offhand.clone();
         }
 
         return new InventorySnapshot(
-                player.getUniqueId(),
-                transactionId,
-                System.currentTimeMillis(),
-                items
+                contents,
+                armor,
+                offhand
         );
     }
 
-    private Map<Material, Integer> aggregate(
-            InventorySnapshot snapshot
+    private List<ItemStack> cloneContents(
+            ItemStack[] source
     ) {
 
-        Map<Material, Integer> totals =
-                new HashMap<>();
-
-        for (ItemFingerprint item :
-                snapshot.items().values()) {
-
-            totals.merge(
-                    item.material(),
-                    item.amount(),
-                    Integer::sum
-            );
-        }
-
-        return totals;
-    }
-
-    private List<Material> union(
-            Map<Material, Integer> first,
-            Map<Material, Integer> second
-    ) {
-
-        List<Material> result =
+        List<ItemStack> result =
                 new ArrayList<>(
-                        first.keySet()
+                        source.length
                 );
 
-        for (Material material : second.keySet()) {
+        for (ItemStack item : source) {
 
-            if (!result.contains(material)) {
-                result.add(material);
-            }
+            result.add(
+                    item == null
+                            ? null
+                            : item.clone()
+            );
         }
 
         return result;
     }
 
-    private boolean isEmpty(ItemStack item) {
+    /**
+     * Calculates the total number of a material
+     * in an inventory snapshot.
+     */
+    public int countMaterial(
+            InventorySnapshot snapshot,
+            Material material
+    ) {
 
-        return item == null
-                || item.getType().isAir()
-                || item.getAmount() <= 0;
+        if (snapshot == null
+                || material == null) {
+
+            return 0;
+        }
+
+        int total = 0;
+
+        for (ItemStack item :
+                snapshot.contents()) {
+
+            if (item != null
+                    && item.getType() == material) {
+
+                total += item.getAmount();
+            }
+        }
+
+        for (ItemStack item :
+                snapshot.armor()) {
+
+            if (item != null
+                    && item.getType() == material) {
+
+                total += item.getAmount();
+            }
+        }
+
+        ItemStack offhand =
+                snapshot.offhand();
+
+        if (offhand != null
+                && offhand.getType() == material) {
+
+            total += offhand.getAmount();
+        }
+
+        return total;
     }
 
     /**
-     * Immutable inventory snapshot.
+     * Calculates the difference in quantity of one material
+     * between two snapshots.
+     *
+     * Positive = increased.
+     * Negative = decreased.
+     */
+    public int materialDelta(
+            InventorySnapshot before,
+            InventorySnapshot after,
+            Material material
+    ) {
+
+        return countMaterial(
+                after,
+                material
+        ) - countMaterial(
+                before,
+                material
+        );
+    }
+
+    /**
+     * Returns all registered provenance records.
+     */
+    public List<ItemProvenance>
+    getProvenanceRecords() {
+
+        return List.copyOf(
+                provenance.values()
+        );
+    }
+
+    /**
+     * Removes old records from memory.
+     *
+     * This should be called periodically to prevent
+     * unlimited memory growth.
+     */
+    public void cleanup(
+            long maxAgeMillis
+    ) {
+
+        long now =
+                System.currentTimeMillis();
+
+        transactions.entrySet()
+                .removeIf(
+                        entry -> now
+                                - entry.getValue()
+                                .timestamp()
+                                > maxAgeMillis
+                );
+
+        provenance.entrySet()
+                .removeIf(
+                        entry -> now
+                                - entry.getValue()
+                                .timestamp()
+                                > maxAgeMillis
+                );
+    }
+
+    /**
+     * Clears all in-memory transaction information.
+     */
+    public void clear() {
+
+        activeSnapshots.clear();
+        transactions.clear();
+        provenance.clear();
+    }
+
+    /**
+     * Immutable transaction-start snapshot.
+     */
+    public record TransactionSnapshot(
+
+            String transactionId,
+
+            UUID playerId,
+
+            String source,
+
+            InventorySnapshot inventory,
+
+            long timestamp
+
+    ) {
+    }
+
+    /**
+     * Immutable inventory state.
      */
     public record InventorySnapshot(
-            UUID playerId,
-            long transactionId,
-            long timestamp,
-            Map<Integer, ItemFingerprint> items
+
+            List<ItemStack> contents,
+
+            List<ItemStack> armor,
+
+            ItemStack offhand
+
     ) {
 
         public InventorySnapshot {
 
-            items = Map.copyOf(items);
+            contents =
+                    contents == null
+                            ? List.of()
+                            : copy(contents);
+
+            armor =
+                    armor == null
+                            ? List.of()
+                            : copy(armor);
+
+            if (offhand != null) {
+                offhand =
+                        offhand.clone();
+            }
         }
-    }
 
-    /**
-     * Lightweight item representation.
-     *
-     * We intentionally do not store the entire ItemStack object
-     * in the ledger to keep memory usage low.
-     */
-    public record ItemFingerprint(
-            Material material,
-            int amount,
-            String displayName,
-            String customModelData
-    ) {
-
-        public static ItemFingerprint from(
-                ItemStack item
+        private static List<ItemStack> copy(
+                List<ItemStack> source
         ) {
 
-            String displayName = null;
-            String customModelData = null;
+            List<ItemStack> result =
+                    new ArrayList<>(
+                            source.size()
+                    );
 
-            if (item.hasItemMeta()) {
+            for (ItemStack item : source) {
 
-                if (item.getItemMeta().hasDisplayName()) {
-
-                    displayName =
-                            item.getItemMeta()
-                                    .getDisplayName();
-                }
-
-                /*
-                 * Do not assume a particular Paper
-                 * custom-model-data API here.
-                 *
-                 * The material + amount + display name
-                 * is enough for this lightweight ledger.
-                 */
+                result.add(
+                        item == null
+                                ? null
+                                : item.clone()
+                );
             }
 
-            return new ItemFingerprint(
-                    item.getType(),
-                    item.getAmount(),
-                    displayName,
-                    customModelData
+            return List.copyOf(
+                    result
             );
         }
     }
 
     /**
-     * Result of comparing two inventory states.
+     * Complete before/after transaction record.
      */
-    public record TransactionResult(
-            boolean valid,
+    public record TransactionRecord(
+
+            String transactionId,
+
+            UUID playerId,
+
+            String source,
+
             InventorySnapshot before,
+
             InventorySnapshot after,
-            Map<Material, Integer> increases,
-            Map<Material, Integer> decreases
+
+            long timestamp
+
     ) {
 
-        public TransactionResult {
+        /**
+         * Returns whether the inventory changed.
+         */
+        public boolean changed() {
 
-            increases = Map.copyOf(increases);
-            decreases = Map.copyOf(decreases);
-        }
-
-        public static TransactionResult invalid(
-                String reason
-        ) {
-
-            return new TransactionResult(
-                    false,
-                    null,
-                    null,
-                    Collections.emptyMap(),
-                    Collections.emptyMap()
+            return !before.equals(
+                    after
             );
         }
 
-        public boolean hasIncrease(
+        /**
+         * Returns the change in quantity of a material.
+         */
+        public int materialDelta(
                 Material material
         ) {
 
-            return increases.getOrDefault(
-                    material,
-                    0
-            ) > 0;
+            int beforeAmount =
+                    count(
+                            before,
+                            material
+                    );
+
+            int afterAmount =
+                    count(
+                            after,
+                            material
+                    );
+
+            return afterAmount
+                    - beforeAmount;
         }
 
-        public int increasedAmount(
+        private static int count(
+                InventorySnapshot snapshot,
                 Material material
         ) {
 
-            return increases.getOrDefault(
-                    material,
-                    0
-            );
-        }
+            int total = 0;
 
-        public int decreasedAmount(
-                Material material
-        ) {
+            for (ItemStack item :
+                    snapshot.contents()) {
 
-            return decreases.getOrDefault(
-                    material,
-                    0
-            );
+                if (item != null
+                        && item.getType() == material) {
+
+                    total += item.getAmount();
+                }
+            }
+
+            for (ItemStack item :
+                    snapshot.armor()) {
+
+                if (item != null
+                        && item.getType() == material) {
+
+                    total += item.getAmount();
+                }
+            }
+
+            ItemStack offhand =
+                    snapshot.offhand();
+
+            if (offhand != null
+                    && offhand.getType() == material) {
+
+                total += offhand.getAmount();
+            }
+
+            return total;
         }
     }
-      }
+    }
