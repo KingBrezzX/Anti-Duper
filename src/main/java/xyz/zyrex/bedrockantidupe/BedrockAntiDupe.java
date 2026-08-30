@@ -168,7 +168,19 @@ public final class BedrockAntiDupe extends JavaPlugin
         loadSettings();
     }
 
-    public boolean isEnabled() {
+    /*
+     * IMPORTANT:
+     *
+     * JavaPlugin already has a final isEnabled()
+     * method.
+     *
+     * Therefore this plugin MUST NOT declare:
+     *
+     * public boolean isEnabled()
+     *
+     * We use isPluginEnabled() instead.
+     */
+    public boolean isPluginEnabled() {
 
         return getConfig()
                 .getBoolean(
@@ -182,7 +194,7 @@ public final class BedrockAntiDupe extends JavaPlugin
     ) {
 
         if (player == null
-                || !isEnabled()) {
+                || !isPluginEnabled()) {
             return false;
         }
 
@@ -729,6 +741,7 @@ public final class BedrockAntiDupe extends JavaPlugin
                         () -> {
 
                             if (player.isOnline()) {
+
                                 detector.reset(
                                         player
                                 );
@@ -749,6 +762,8 @@ public final class BedrockAntiDupe extends JavaPlugin
                         .getUniqueId();
 
         transactionCooldown.remove(uuid);
+        staffCooldown.remove(uuid);
+        discordCooldown.remove(uuid);
     }
 
     private void notifyNearbyPlayers(
@@ -767,6 +782,9 @@ public final class BedrockAntiDupe extends JavaPlugin
                         8.0
                 );
 
+        double radiusSquared =
+                radius * radius;
+
         for (Player player :
                 block.getWorld()
                         .getPlayers()) {
@@ -779,7 +797,7 @@ public final class BedrockAntiDupe extends JavaPlugin
                     .distanceSquared(
                             block.getLocation()
                     )
-                    > radius * radius) {
+                    > radiusSquared) {
                 continue;
             }
 
@@ -884,7 +902,7 @@ public final class BedrockAntiDupe extends JavaPlugin
         String message =
                 getConfig().getString(
                         "messages.staff",
-                        "&cDupe suspected &7| &f%player% &7| &f%reason%"
+                        "&cDupe suspected &7| &f%player% &7| &f%reason% &7| violations: &f%violations%"
                 );
 
         message = message
@@ -1255,7 +1273,7 @@ public final class BedrockAntiDupe extends JavaPlugin
                             ChatColor.GRAY
                                     + "Enabled: "
                                     + ChatColor.WHITE
-                                    + plugin.isEnabled()
+                                    + plugin.isPluginEnabled()
                     );
 
                     sender.sendMessage(
@@ -1398,4 +1416,4 @@ public final class BedrockAntiDupe extends JavaPlugin
             );
         }
     }
-                    }
+                                }
