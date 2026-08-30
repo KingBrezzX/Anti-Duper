@@ -1,0 +1,472 @@
+# ============================================================
+# BedrockAntiDupe
+# Paper 26.2 | Java 25
+# ============================================================
+
+settings:
+
+  enabled: true
+
+  # Protect Java players
+  protect-java: true
+
+  # Protect Bedrock players through Geyser/Floodgate
+  protect-bedrock: true
+
+  # Event based protection.
+  # The plugin does NOT continuously scan chunks.
+  event-based: true
+
+  # Prevent transaction spam from wasting CPU.
+  transaction-cooldown-ms: 150
+
+
+# ============================================================
+# ACTION
+# ============================================================
+
+action:
+
+  # Available:
+  #
+  # REMOVE
+  # ALERT
+  # REMOVE_AND_ALERT
+  #
+  # REMOVE:
+  # Suspicious duplicated item is removed.
+  #
+  # ALERT:
+  # Only staff + Discord notification.
+  #
+  # REMOVE_AND_ALERT:
+  # Remove suspicious item AND notify staff/Discord.
+
+  mode: REMOVE_AND_ALERT
+
+  remove:
+
+    enabled: true
+
+    # Try to preserve the original registered item.
+    preserve-original: true
+
+    # Resync the player's inventory after protection.
+    resync-inventory: true
+
+  alert:
+
+    enabled: true
+
+    # Send alert to online staff.
+    staff: true
+
+    # Send alert to Discord webhook.
+    discord: true
+
+
+# ============================================================
+# DISCORD WEBHOOK
+# ============================================================
+
+discord:
+
+  enabled: false
+
+  # Put your Discord webhook here.
+  #
+  # NEVER publish this webhook URL to GitHub.
+  #
+  webhook-url: ""
+
+  username: "BedrockAntiDupe"
+
+  # Minimum time between Discord alerts.
+  # Prevents webhook spam.
+  cooldown-seconds: 10
+
+  # Events that can be sent to Discord.
+  events:
+
+    duplication: true
+
+    quarantine: true
+
+    punishment: true
+
+
+# ============================================================
+# CONSOLE
+# ============================================================
+
+console:
+
+  # Keep false to prevent console spam.
+  enabled: false
+
+  # Only important internal errors.
+  errors: true
+
+  duplication-detected: false
+
+  transactions: false
+
+  inventory-events: false
+
+
+# ============================================================
+# STAFF ALERT
+# ============================================================
+
+staff:
+
+  enabled: true
+
+  # Permission required to receive alerts.
+  permission: "bedrockantidupe.alert"
+
+  # Minimum time between staff alerts.
+  cooldown-seconds: 5
+
+
+# ============================================================
+# DETECTION
+# ============================================================
+
+detection:
+
+  # Inventory transactions.
+  inventory: true
+
+  # Shulker duplication protection.
+  shulker: true
+
+  # Piston / sticky piston protection.
+  piston: true
+
+  # TNT protection.
+  tnt: true
+
+  # Explosion protection.
+  explosion: true
+
+  # Chest protection.
+  chest: true
+
+  # Ender Chest protection.
+  ender-chest: true
+
+  # Hopper transfer protection.
+  hopper: true
+
+  # Dispenser protection.
+  dispenser: true
+
+  # Dropper protection.
+  dropper: true
+
+  # Anvil transaction protection.
+  anvil: true
+
+  # Logout / reconnect / rollback protection.
+  rollback: true
+
+
+# ============================================================
+# PROTECTED CONTAINERS
+# ============================================================
+
+containers:
+
+  shulker-box: true
+
+  chest: true
+
+  trapped-chest: true
+
+  ender-chest: true
+
+  barrel: true
+
+  hopper: true
+
+  dispenser: true
+
+  dropper: true
+
+  furnace: true
+
+  blast-furnace: true
+
+  smoker: true
+
+  crafter: true
+
+
+# ============================================================
+# EXPLOSION
+# ============================================================
+
+explosion:
+
+  enabled: true
+
+  # Protect containers affected by TNT.
+  protect-containers: true
+
+  # Protect shulker boxes affected by explosions.
+  protect-shulkers: true
+
+  # Detect suspicious item drops after explosions.
+  detect-item-drops: true
+
+  # Validate inventory after an explosion.
+  validate-inventory: true
+
+
+# ============================================================
+# PISTON
+# ============================================================
+
+piston:
+
+  enabled: true
+
+  extend: true
+
+  retract: true
+
+  sticky-piston: true
+
+  protect-shulker: true
+
+  protect-container: true
+
+
+# ============================================================
+# TNT
+# ============================================================
+
+tnt:
+
+  enabled: true
+
+  normal-tnt: true
+
+  tnt-minecart: true
+
+  piston-tnt: true
+
+  explosion-validation: true
+
+
+# ============================================================
+# ENDER CHEST
+# ============================================================
+
+ender-chest:
+
+  enabled: true
+
+  deposit: true
+
+  withdraw: true
+
+  rapid-transactions: true
+
+  logout: true
+
+  reconnect: true
+
+  death: true
+
+  respawn: true
+
+  rollback: true
+
+  inventory-resync: true
+
+
+# ============================================================
+# INVENTORY
+# ============================================================
+
+inventory:
+
+  enabled: true
+
+  click: true
+
+  shift-click: true
+
+  drag: true
+
+  double-click: true
+
+  hotbar-swap: true
+
+  drop: true
+
+  pickup: true
+
+  close-open: true
+
+  transaction-validation: true
+
+
+# ============================================================
+# SHOP / SELL / AUCTION / ORDER
+# ============================================================
+
+economy:
+
+  enabled: true
+
+  # Validate item/economy transactions.
+  transaction-validation: true
+
+  shop:
+
+    enabled: true
+
+    buy: true
+
+    sell: true
+
+  sell:
+
+    enabled: true
+
+  auction:
+
+    enabled: true
+
+  orders:
+
+    enabled: true
+
+  # Protect container items such as shulkers.
+  container-items: true
+
+
+# ============================================================
+# ROLLBACK PROTECTION
+# ============================================================
+
+rollback:
+
+  enabled: true
+
+  logout: true
+
+  reconnect: true
+
+  death: true
+
+  respawn: true
+
+  server-restart: true
+
+  inventory-resync: true
+
+  compare-before-after: true
+
+
+# ============================================================
+# VIOLATIONS
+# ============================================================
+
+violations:
+
+  enabled: true
+
+  # Reset violations after this amount of seconds.
+  reset-after-seconds: 300
+
+  thresholds:
+
+    # First detection.
+    block: 1
+
+    # Repeated detection.
+    resync: 2
+
+    # Serious repeated detection.
+    quarantine: 3
+
+    # Automatic punishment.
+    punish: 5
+
+
+# ============================================================
+# QUARANTINE
+# ============================================================
+
+quarantine:
+
+  enabled: true
+
+  # Save evidence before removing suspicious data.
+  save-evidence: true
+
+  # Maximum evidence records per player.
+  max-evidence-per-player: 20
+
+
+# ============================================================
+# PUNISHMENT
+# ============================================================
+
+punishment:
+
+  # IMPORTANT:
+  # Disabled by default.
+  enabled: false
+
+  # Executed by console after the configured violation threshold.
+  command: "tempban %player% 7d Duplication exploit"
+
+
+# ============================================================
+# PERFORMANCE
+# ============================================================
+
+performance:
+
+  # Discord requests never run on the Minecraft main thread.
+  async-discord: true
+
+  # Evidence processing can run asynchronously where safe.
+  async-evidence: true
+
+  # Maximum queued protection events.
+  queue-limit: 500
+
+  # Avoid processing the exact same transaction repeatedly.
+  deduplicate-transactions: true
+
+  # Never perform a full-world scan.
+  loaded-chunks-only: true
+
+
+# ============================================================
+# MESSAGES
+# ============================================================
+
+messages:
+
+  prefix: "&8[&bAntiDupe&8] "
+
+  staff: "&cDupe suspected &7| &f%player% &7| &f%reason%"
+
+  removed: "&cSuspicious duplicated item removed."
+
+  quarantine: "&eSuspicious item quarantined."
+
+  reload: "&aBedrockAntiDupe configuration reloaded."
+
+  no-permission: "&cYou do not have permission."
+
+  player-not-found: "&cPlayer not found."
+
+  status: "&bBedrockAntiDupe &7mode: &f%mode%"
