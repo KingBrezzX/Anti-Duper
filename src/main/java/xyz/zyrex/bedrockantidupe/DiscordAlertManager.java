@@ -1,8 +1,7 @@
 package xyz.zyrex.bedrockantidupe;
 
-import org.bukkit.Bukkit;
 import org.bukkit.Location;
-import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.scheduler.BukkitRunnable;
 
 import java.io.IOException;
 import java.net.URI;
@@ -10,31 +9,26 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
-import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * Sends anti-dupe alerts to Discord through a webhook.
+ * Discord webhook notification manager.
  *
- * Discord requests are asynchronous and rate-limited locally
- * to avoid blocking the Minecraft main thread or spamming staff.
+ * Notifications are sent asynchronously so the main server thread
+ * is not blocked by network requests.
  */
 public final class DiscordAlertManager {
 
-    private final JavaPlugin plugin;
+    private final BedrockAntiDupe plugin;
 
     private final HttpClient httpClient;
 
-    private final Map<String, Long> cooldowns =
+    private final Map<String, Long> lastAlerts =
             new ConcurrentHashMap<>();
 
-    private final AtomicBoolean sending =
-            new AtomicBoolean(false);
-
     public DiscordAlertManager(
-            JavaPlugin plugin
+            BedrockAntiDupe plugin
     ) {
 
         this.plugin = plugin;
@@ -54,364 +48,273 @@ public final class DiscordAlertManager {
             String playerName,
             String playerUuid,
             String platform,
-            String item,
+            String material,
             int amount,
             String source,
             Location location,
             String action
     ) {
 
-        if (!enabled()) {
+        if (!isEnabled()
+                || !plugin.getConfig()
+                .getBoolean(
+                        "discord.notify-dupe",
+                        true
+                )) {
+
             return;
         }
 
         String key =
-                "dupe:"
-                        + safe(playerUuid)
+                "DUPE:"
+                        + playerUuid
                         + ":"
-                        + safe(item);
+                        + material
+                        + ":"
+                        + source;
 
-        if (!passesCooldown(key)) {
+        if (isOnCooldown(key)) {
             return;
         }
 
-        String description =
-                "**🚨 DUPE DETECTED**\n\n"
+        String locationText =
+                formatLocation(location);
+
+        String content =
+                "**🚨 CONFIRMED DUPE DETECTED**\n"
                         + "**Player:** "
-                        + escape(playerName)
+                        + safe(playerName)
+                        + "\n"
+                        + "**UUID:** "
+                        + safe(playerUuid)
                         + "\n"
                         + "**Platform:** "
-                        + escape(platform)
+                        + safe(platform)
                         + "\n"
                         + "**Item:** "
-                        + escape(item)
+                        + safe(material)
                         + "\n"
                         + "**Amount:** "
                         + amount
                         + "\n"
                         + "**Source:** "
-                        + escape(source)
+                        + safe(source)
+                        + "\n"
+                        + "**Location:** "
+                        + locationText
                         + "\n"
                         + "**Action:** "
-                        + escape(action)
-                        + "\n"
-                        + formatLocation(location);
+                        + safe(action);
 
-        sendEmbed(
-                "Anti-Dupe Detection",
-                description,
-                configuredColor(
-                        "webhook.colors.dupe",
-                        0xFF0000
-                )
-        );
+        send(content);
     }
 
     /**
-     * Sends an economy rollback notification.
+     * Sends an economy rollback alert.
      */
     public void sendEconomyRollbackAlert(
             String playerName,
             String playerUuid,
-            double requested,
-            double withdrawn,
-            String result,
+            double originalValue,
+            double rolledBackAmount,
+            String status,
             String transactionId
     ) {
 
-        if (!enabled()) {
+        if (!isEnabled()
+                || !plugin.getConfig()
+                .getBoolean(
+                        "discord.notify-economy-rollback",
+                        true
+                )) {
+
             return;
         }
 
         String key =
-                "economy:"
+                "ECONOMY:"
+                        + transactionId;
+
+        if (isOnCooldown(key)) {
+            return;
+        }
+
+        String content =
+                "**💰 ANTI-DUPE ECONOMY ROLLBACK**\n"
+                        + "**Player:** "
+                        + safe(playerName)
+                        + "\n"
+                        + "**UUID:** "
                         + safe(playerUuid)
-                        + ":"
+                        + "\n"
+                        + "**Original sale:** $"
+                        + formatMoney(originalValue)
+                        + "\n"
+                        + "**Rolled back:** $"
+                        + formatMoney(rolledBackAmount)
+                        + "\n"
+                        + "**Status:** "
+                        + safe(status)
+                        + "\n"
+                        + "**Transaction:** "
                         + safe(transactionId);
 
-        if (!passesCooldown(key)) {
-            return;
-        }
-
-        String description =
-                "**💰 ECONOMY ROLLBACK**\n\n"
-                        + "**Player:** "
-                        + escape(playerName)
-                        + "\n"
-                        + "**Transaction:** `"
-                        + escape(transactionId)
-                        + "`\n"
-                        + "**Recorded value:** "
-                        + formatMoney(requested)
-                        + "\n"
-                        + "**Rolled back:** "
-                        + formatMoney(withdrawn)
-                        + "\n"
-                        + "**Result:** "
-                        + escape(result);
-
-        sendEmbed(
-                "Anti-Dupe Economy Protection",
-                description,
-                configuredColor(
-                        "webhook.colors.economy",
-                        0xFFA500
-                )
-        );
+        send(content);
     }
 
     /**
-     * Sends a generic security notification.
+     * Sends the webhook request asynchronously.
      */
-    public void sendSecurityAlert(
-            String title,
-            String message
+    private void send(
+            String content
     ) {
 
-        if (!enabled()) {
+        String webhook =
+                plugin.getConfig()
+                        .getString(
+                                "discord.webhook-url",
+                                ""
+                        );
+
+        if (webhook == null
+                || webhook.isBlank()) {
+
+            plugin.getLogger().warning(
+                    "Discord webhook is enabled but no webhook URL is configured."
+            );
+
             return;
         }
 
-        String key =
-                "security:"
-                        + safe(title)
-                        + ":"
-                        + safe(message);
+        String json =
+                "{\"content\":\""
+                        + escapeJson(content)
+                        + "\"}";
 
-        if (!passesCooldown(key)) {
-            return;
-        }
+        new BukkitRunnable() {
 
-        sendEmbed(
-                title,
-                message,
-                configuredColor(
-                        "webhook.colors.security",
-                        0xFFFF00
-                )
+            @Override
+            public void run() {
+
+                try {
+
+                    HttpRequest request =
+                            HttpRequest.newBuilder()
+                                    .uri(
+                                            URI.create(
+                                                    webhook
+                                            )
+                                    )
+                                    .timeout(
+                                            Duration.ofSeconds(5)
+                                    )
+                                    .header(
+                                            "Content-Type",
+                                            "application/json"
+                                    )
+                                    .POST(
+                                            HttpRequest.BodyPublishers
+                                                    .ofString(
+                                                            json
+                                                    )
+                                    )
+                                    .build();
+
+                    HttpResponse<String> response =
+                            httpClient.send(
+                                    request,
+                                    HttpResponse.BodyHandlers
+                                            .ofString()
+                            );
+
+                    int status =
+                            response.statusCode();
+
+                    if (status < 200
+                            || status >= 300) {
+
+                        plugin.getLogger().warning(
+                                "Discord webhook returned HTTP "
+                                        + status
+                        );
+                    }
+
+                } catch (
+                        IOException
+                                | InterruptedException
+                                | IllegalArgumentException ex
+                ) {
+
+                    plugin.getLogger().warning(
+                            "Failed to send Discord anti-dupe alert: "
+                                    + ex.getMessage()
+                    );
+
+                    if (ex instanceof InterruptedException) {
+
+                        Thread.currentThread()
+                                .interrupt();
+                    }
+                }
+            }
+
+        }.runTaskAsynchronously(
+                plugin
         );
     }
 
     /**
-     * Checks whether Discord notifications are enabled.
+     * Cooldown prevents Discord spam.
      */
-    private boolean enabled() {
-
-        if (!plugin.getConfig().getBoolean(
-                "webhook.enabled",
-                false
-        )) {
-            return false;
-        }
-
-        String url =
-                plugin.getConfig().getString(
-                        "webhook.url",
-                        ""
-                );
-
-        return url != null
-                && !url.isBlank();
-    }
-
-    /**
-     * Local anti-spam cooldown.
-     */
-    private boolean passesCooldown(
+    private boolean isOnCooldown(
             String key
     ) {
 
-        long cooldownSeconds =
+        long cooldown =
                 Math.max(
                         0L,
-                        plugin.getConfig().getLong(
-                                "webhook.cooldown-seconds",
-                                10L
-                        )
-                );
+                        plugin.getConfig()
+                                .getLong(
+                                        "discord.cooldown-seconds",
+                                        10L
+                                )
+                ) * 1000L;
 
-        if (cooldownSeconds <= 0) {
-            return true;
+        if (cooldown <= 0L) {
+            return false;
         }
 
         long now =
                 System.currentTimeMillis();
 
-        long cooldownMillis =
-                cooldownSeconds * 1000L;
-
         Long previous =
-                cooldowns.putIfAbsent(
+                lastAlerts.put(
                         key,
                         now
                 );
 
         if (previous == null) {
+            return false;
+        }
+
+        if (now - previous < cooldown) {
             return true;
         }
 
-        if (now - previous >= cooldownMillis) {
-
-            cooldowns.put(
-                    key,
-                    now
-            );
-
-            return true;
-        }
+        lastAlerts.put(
+                key,
+                now
+        );
 
         return false;
     }
 
-    /**
-     * Sends an embed asynchronously.
-     */
-    private void sendEmbed(
-            String title,
-            String description,
-            int color
-    ) {
+    private boolean isEnabled() {
 
-        String webhookUrl =
-                plugin.getConfig().getString(
-                        "webhook.url",
-                        ""
-                );
-
-        if (webhookUrl == null
-                || webhookUrl.isBlank()) {
-            return;
-        }
-
-        if (sending.get()) {
-
-            if (plugin.getConfig().getBoolean(
-                    "webhook.single-flight",
-                    true
-            )) {
-                return;
-            }
-        }
-
-        String username =
-                plugin.getConfig().getString(
-                        "webhook.username",
-                        "BedrockAntiDupe"
-                );
-
-        String payload =
-                "{"
-                        + "\"username\":\""
-                        + jsonEscape(username)
-                        + "\","
-                        + "\"embeds\":[{"
-                        + "\"title\":\""
-                        + jsonEscape(title)
-                        + "\","
-                        + "\"description\":\""
-                        + jsonEscape(description)
-                        + "\","
-                        + "\"color\":"
-                        + color
-                        + "}]"
-                        + "}";
-
-        HttpRequest request;
-
-        try {
-
-            request =
-                    HttpRequest.newBuilder()
-                            .uri(
-                                    URI.create(
-                                            webhookUrl
-                                    )
-                            )
-                            .timeout(
-                                    Duration.ofSeconds(10)
-                            )
-                            .header(
-                                    "Content-Type",
-                                    "application/json"
-                            )
-                            .POST(
-                                    HttpRequest.BodyPublishers
-                                            .ofString(payload)
-                            )
-                            .build();
-
-        } catch (IllegalArgumentException exception) {
-
-            plugin.getLogger().warning(
-                    "Invalid Discord webhook URL."
-            );
-
-            return;
-        }
-
-        Bukkit.getScheduler()
-                .runTaskAsynchronously(
-                        plugin,
-                        () -> {
-
-                            boolean acquired =
-                                    sending.compareAndSet(
-                                            false,
-                                            true
-                                    );
-
-                            if (!acquired
-                                    && plugin.getConfig()
-                                    .getBoolean(
-                                            "webhook.single-flight",
-                                            true
-                                    )) {
-                                return;
-                            }
-
-                            try {
-
-                                HttpResponse<String> response =
-                                        httpClient.send(
-                                                request,
-                                                HttpResponse.BodyHandlers
-                                                        .ofString()
-                                        );
-
-                                int status =
-                                        response.statusCode();
-
-                                if (status < 200
-                                        || status >= 300) {
-
-                                    plugin.getLogger().warning(
-                                            "Discord webhook returned HTTP "
-                                                    + status
-                                    );
-                                }
-
-                            } catch (
-                                    IOException
-                                            | InterruptedException exception
-                            ) {
-
-                                if (exception
-                                        instanceof InterruptedException) {
-
-                                    Thread.currentThread()
-                                            .interrupt();
-                                }
-
-                                plugin.getLogger().warning(
-                                        "Failed to send Discord webhook: "
-                                                + exception.getMessage()
-                                );
-
-                            } finally {
-
-                                sending.set(false);
-                            }
-                        }
+        return plugin.getConfig()
+                .getBoolean(
+                        "discord.enabled",
+                        false
                 );
     }
 
@@ -419,76 +322,33 @@ public final class DiscordAlertManager {
             Location location
     ) {
 
-        if (location == null
-                || location.getWorld() == null) {
-
-            return "**Location:** Unknown";
+        if (location == null) {
+            return "UNKNOWN";
         }
 
-        return "**World:** "
-                + escape(
-                        location.getWorld()
-                                .getName()
-                )
-                + "\n"
-                + "**Location:** `"
+        String world =
+                location.getWorld() == null
+                        ? "UNKNOWN"
+                        : location.getWorld()
+                                .getName();
+
+        return world
+                + " "
                 + location.getBlockX()
-                + ", "
+                + ","
                 + location.getBlockY()
-                + ", "
-                + location.getBlockZ()
-                + "`";
-    }
-
-    private int configuredColor(
-            String path,
-            int fallback
-    ) {
-
-        String value =
-                plugin.getConfig().getString(
-                        path,
-                        ""
-                );
-
-        if (value == null
-                || value.isBlank()) {
-            return fallback;
-        }
-
-        value =
-                value.trim()
-                        .toLowerCase(
-                                Locale.ROOT
-                        );
-
-        try {
-
-            if (value.startsWith("#")) {
-
-                value =
-                        value.substring(1);
-            }
-
-            return Integer.parseInt(
-                    value,
-                    16
-            );
-
-        } catch (NumberFormatException ignored) {
-
-            return fallback;
-        }
+                + ","
+                + location.getBlockZ();
     }
 
     private String formatMoney(
-            double amount
+            double value
     ) {
 
         return String.format(
-                Locale.US,
-                "$%,.2f",
-                amount
+                java.util.Locale.US,
+                "%.2f",
+                value
         );
     }
 
@@ -496,55 +356,43 @@ public final class DiscordAlertManager {
             String value
     ) {
 
-        return value == null
-                ? ""
-                : value;
+        if (value == null
+                || value.isBlank()) {
+
+            return "UNKNOWN";
+        }
+
+        return value;
     }
 
-    private String escape(
+    private String escapeJson(
             String value
     ) {
 
-        if (value == null) {
-            return "";
-        }
-
         return value
-                .replace("\\", "\\\\")
-                .replace("*", "\\*")
-                .replace("_", "\\_")
-                .replace("`", "\\`");
-    }
-
-    private String jsonEscape(
-            String value
-    ) {
-
-        if (value == null) {
-            return "";
-        }
-
-        return value
-                .replace("\\", "\\\\")
-                .replace("\"", "\\\"")
-                .replace("\r", "\\r")
-                .replace("\n", "\\n")
-                .replace("\t", "\\t");
+                .replace(
+                        "\\",
+                        "\\\\"
+                )
+                .replace(
+                        "\"",
+                        "\\\""
+                )
+                .replace(
+                        "\r",
+                        "\\r"
+                )
+                .replace(
+                        "\n",
+                        "\\n"
+                );
     }
 
     /**
-     * Clears local cooldown state.
+     * Clears old cooldown entries.
      */
-    public void clearCooldowns() {
+    public void cleanup() {
 
-        cooldowns.clear();
+        lastAlerts.clear();
     }
-
-    /**
-     * Shuts down the HTTP client.
-     */
-    public void shutdown() {
-
-        cooldowns.clear();
     }
-          }
