@@ -2,18 +2,19 @@
 
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
-         https://maven.apache.org/xsd/maven-4.0.0.xsd">
+         xsi:schemaLocation="
+            http://maven.apache.org/POM/4.0.0
+            https://maven.apache.org/xsd/maven-4.0.0.xsd">
 
     <modelVersion>4.0.0</modelVersion>
 
     <groupId>xyz.zyrex</groupId>
     <artifactId>BedrockAntiDupe</artifactId>
-    <version>1.0.0</version>
+    <version>2.0.0</version>
     <packaging>jar</packaging>
 
     <name>BedrockAntiDupe</name>
-    <description>Advanced anti-duplication protection for Paper 26.2</description>
+    <description>Advanced anti-duplication protection for Paper servers.</description>
 
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
@@ -28,27 +29,27 @@
         </repository>
 
         <repository>
-            <id>opencollab-releases</id>
-            <url>https://repo.opencollab.dev/main/</url>
+            <id>jitpack.io</id>
+            <url>https://jitpack.io</url>
         </repository>
 
     </repositories>
 
     <dependencies>
 
-        <!-- Paper 26.2 API -->
+        <!-- Paper API -->
         <dependency>
             <groupId>io.papermc.paper</groupId>
             <artifactId>paper-api</artifactId>
-            <version>[26.2.build,)</version>
+            <version>26.2-R0.1-SNAPSHOT</version>
             <scope>provided</scope>
         </dependency>
 
-        <!-- Floodgate API -->
+        <!-- Vault API -->
         <dependency>
-            <groupId>org.geysermc.floodgate</groupId>
-            <artifactId>api</artifactId>
-            <version>2.2.4-SNAPSHOT</version>
+            <groupId>com.github.MilkBowl</groupId>
+            <artifactId>VaultAPI</artifactId>
+            <version>1.7.1</version>
             <scope>provided</scope>
         </dependency>
 
@@ -56,10 +57,11 @@
 
     <build>
 
-        <finalName>BedrockAntiDupe-1.0.0</finalName>
+        <finalName>BedrockAntiDupe-${project.version}</finalName>
 
         <plugins>
 
+            <!-- Java 25 compiler -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
@@ -67,9 +69,11 @@
 
                 <configuration>
                     <release>25</release>
+                    <encoding>UTF-8</encoding>
                 </configuration>
             </plugin>
 
+            <!-- Reproducible JAR -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-jar-plugin</artifactId>
