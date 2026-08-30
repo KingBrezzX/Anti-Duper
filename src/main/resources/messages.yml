@@ -1,0 +1,115 @@
+# ============================================================
+# BedrockAntiDupe
+# Messages
+# Version 2.0.0
+# ============================================================
+
+prefix: "&8[&bAntiDupe&8] &r"
+
+general:
+  no-permission: "&cKamu tidak memiliki permission."
+  player-only: "&cCommand ini hanya dapat digunakan oleh pemain."
+  reloaded: "&aKonfigurasi BedrockAntiDupe berhasil di-reload."
+  enabled: "&aAntiDupe aktif."
+  disabled: "&cAntiDupe sedang nonaktif."
+
+status:
+  header: "&8&m-----------------------------"
+  title: "&b&lBedrockAntiDupe Status"
+  enabled: "&7Status: %status%"
+  detection: "&7Detection: %detection%"
+  shulker: "&7Shulker Protection: %shulker%"
+  economy: "&7Economy Rollback: %economy%"
+  discord: "&7Discord Webhook: %discord%"
+  footer: "&8&m-----------------------------"
+
+dupe:
+  suspicious:
+    "&eAktivitas inventory mencurigakan terdeteksi. Sistem sedang melakukan verifikasi."
+
+  confirmed:
+    "&c&lDUPE TERKONFIRMASI!"
+    "&7Item yang terdeteksi: &f%item%"
+    "&7Jumlah: &f%amount%"
+    "&7Tindakan: &f%action%"
+
+  item-removed:
+    "&c%amount%x %item% telah dihapus karena duplikasi terkonfirmasi."
+
+  no-action:
+    "&aTidak ada tindakan yang diperlukan."
+
+  transaction-missing:
+    "&eTransaksi tidak dapat diverifikasi. Tidak ada item yang dihapus."
+
+economy:
+  rollback-start:
+    "&eTransaksi ekonomi sedang diverifikasi."
+
+  rollback-success:
+    "&aRollback ekonomi berhasil."
+    "&7Jumlah dikembalikan: &f$%amount%"
+
+  rollback-failed:
+    "&cRollback ekonomi gagal."
+    "&7Tidak ada perubahan uang yang dilakukan karena transaksi tidak dapat diverifikasi."
+
+  transaction-not-found:
+    "&eTransaksi penjualan tidak ditemukan. Uang tidak disentuh."
+
+  invalid-amount:
+    "&cJumlah rollback tidak valid. Tidak ada perubahan ekonomi."
+
+discord:
+  enabled:
+    "&aDiscord notification aktif."
+
+  disabled:
+    "&eDiscord notification nonaktif."
+
+  invalid-webhook:
+    "&cDiscord webhook tidak valid."
+
+  sent:
+    "&aNotifikasi Discord berhasil dikirim."
+
+  failed:
+    "&cGagal mengirim notifikasi Discord."
+
+admin:
+  reload:
+    "&aConfiguration berhasil dimuat ulang."
+
+  scan-start:
+    "&ePemeriksaan anti-dupe dimulai..."
+
+  scan-complete:
+    "&aPemeriksaan selesai."
+
+  debug-enabled:
+    "&aDebug mode diaktifkan."
+
+  debug-disabled:
+    "&eDebug mode dinonaktifkan."
+
+errors:
+  internal:
+    "&cTerjadi kesalahan internal AntiDupe."
+
+  transaction:
+    "&cTerjadi kesalahan saat memproses transaksi."
+
+  economy-provider:
+    "&cProvider ekonomi tidak tersedia."
+
+  configuration:
+    "&cKonfigurasi AntiDupe tidak valid."
+
+placeholders:
+  status:
+    enabled: "&aAKTIF"
+    disabled: "&cNONAKTIF"
+
+  boolean:
+    yes: "&aYA"
+    no: "&cTIDAK"
