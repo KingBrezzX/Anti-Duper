@@ -1,450 +1,271 @@
 package xyz.zyrex.bedrockantidupe;
 
-import org.bukkit.Material;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryCloseEvent;
-import org.bukkit.event.inventory.InventoryDragEvent;
-import org.bukkit.event.player.PlayerCommandPreprocessEvent;
 import org.bukkit.inventory.ItemStack;
 
-import java.util.Locale;
-import java.util.Set;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * ShopTransactionListener
+ * Tracks shop-related inventory transactions.
  *
- * Covers shop-related inventory transactions.
+ * This class records the transaction context. It does NOT assume
+ * that every shop click is a sale or a dupe.
  *
  * IMPORTANT:
- * This class does not directly modify money or execute shop commands.
- * It creates a before/after validation boundary around shop activity.
- *
- * It also watches common shop/sell/order command names because
- * different shop plugins expose different command APIs.
- *
- * The exact commands are configurable in config.yml.
+ * Different shop plugins use different inventories and APIs.
+ * Therefore this listener uses configurable title keywords and
+ * records the observed transaction context for later correlation.
  */
-public final class ShopTransactionListener
-        implements Listener {
+public final class ShopTransactionListener implements Listener {
 
     private final BedrockAntiDupe plugin;
-    private final DupeDetector detector;
+    private final TransactionLedger ledger;
 
-    private final Set<UUID> pendingShop =
-            ConcurrentHashMap.newKeySet();
-
-    private final ConcurrentHashMap<UUID, Long> commandCooldown =
+    private final Map<UUID, PendingShopTransaction> pending =
             new ConcurrentHashMap<>();
 
     public ShopTransactionListener(
             BedrockAntiDupe plugin,
-            DupeDetector detector
+            TransactionLedger ledger
     ) {
         this.plugin = plugin;
-        this.detector = detector;
+        this.ledger = ledger;
     }
 
-    /**
-     * Detect shop GUI opening.
-     *
-     * The plugin does not assume a particular shop plugin.
-     * It uses configurable inventory title keywords.
-     */
     @EventHandler(
-            priority = EventPriority.LOWEST,
+            priority = EventPriority.MONITOR,
             ignoreCancelled = true
     )
-    public void onShopClickBefore(
+    public void onInventoryClick(
             InventoryClickEvent event
     ) {
 
-        if (!(event.getWhoClicked() instanceof Player player)) {
+        if (!(event.getWhoClicked()
+                instanceof Player player)) {
             return;
         }
 
-        if (!plugin.isProtected(player)) {
+        String title =
+                event.getView()
+                        .getTitle();
+
+        if (!isShopInventory(title)) {
             return;
         }
 
-        if (!plugin.getConfig().getBoolean(
-                "shop.enabled",
-                true
-        )) {
+        String transactionId =
+                UUID.randomUUID().toString();
+
+        ItemStack cursor =
+                event.getCursor();
+
+        ItemStack current =
+                event.getCurrentItem();
+
+        String itemType =
+                resolveItemType(
+                        current,
+                        cursor
+                );
+
+        int amount =
+                resolveAmount(
+                        current,
+                        cursor
+                );
+
+        PendingShopTransaction transaction =
+                new PendingShopTransaction(
+                        transactionId,
+                        player.getUniqueId(),
+                        itemType,
+                        amount,
+                        title,
+                        event.getRawSlot(),
+                        System.currentTimeMillis()
+                );
+
+        pending.put(
+                player.getUniqueId(),
+                transaction
+        );
+    }
+
+    @EventHandler(
+            priority = EventPriority.MONITOR,
+            ignoreCancelled = true
+    )
+    public void onInventoryClose(
+            InventoryCloseEvent event
+    ) {
+
+        if (!(event.getPlayer()
+                instanceof Player player)) {
             return;
         }
 
-        if (!isShopInventory(
-                event.getView().getTitle()
-        )) {
+        PendingShopTransaction transaction =
+                pending.remove(
+                        player.getUniqueId()
+                );
+
+        if (transaction == null) {
             return;
         }
 
         /*
-         * Only snapshot when the transaction actually contains
-         * an item relevant to anti-dupe protection.
+         * Keep the transaction context available to the rest of
+         * the anti-dupe pipeline. The actual money value should
+         * come from the shop/economy integration, not from an
+         * arbitrary guess here.
          */
-        if (containsProtectedItem(
-                event.getCurrentItem()
-        )
-                || containsProtectedItem(
-                event.getCursor()
-        )
-                || containsProtectedItem(
-                event.getWhoClicked()
-                        .getInventory()
-                        .getItemInMainHand()
+        if (plugin.getConfig().getBoolean(
+                "shop.record-context",
+                true
         )) {
 
-            detector.begin(player);
-
-            pendingShop.add(
-                    player.getUniqueId()
+            plugin.getLogger().fine(
+                    "Recorded shop transaction "
+                            + transaction.transactionId()
+                            + " for "
+                            + player.getName()
             );
         }
     }
 
     /**
-     * Validate shop click after Bukkit processes it.
+     * Records an externally supplied economy transaction.
+     *
+     * This method is intended to be called by a dedicated
+     * shop/economy integration when it knows the exact price.
      */
-    @EventHandler(
-            priority = EventPriority.MONITOR,
-            ignoreCancelled = true
-    )
-    public void onShopClickAfter(
-            InventoryClickEvent event
+    public void recordEconomyTransaction(
+            EconomyTransaction transaction
     ) {
 
-        if (!(event.getWhoClicked() instanceof Player player)) {
+        if (transaction == null) {
             return;
         }
 
-        if (!plugin.isProtected(player)) {
+        if (!transaction.rollbackEligible()) {
             return;
         }
 
-        if (!plugin.getConfig().getBoolean(
-                "shop.enabled",
-                true
-        )) {
-            return;
-        }
+        String key =
+                transaction.transactionId()
+                        .toString();
 
-        if (!pendingShop.contains(
-                player.getUniqueId()
-        )) {
-            return;
-        }
-
-        if (!isShopInventory(
-                event.getView().getTitle()
-        )) {
-            return;
-        }
-
-        detector.validateLater(
-                player,
-                "shop GUI transaction"
-        );
-
-        pendingShop.remove(
-                player.getUniqueId()
+        plugin.getLogger().fine(
+                "Registered economy transaction "
+                        + key
+                        + " for "
+                        + transaction.playerId()
         );
     }
 
     /**
-     * Shop GUI drag transaction.
+     * Returns the current pending shop transaction for a player.
      */
-    @EventHandler(
-            priority = EventPriority.LOWEST,
-            ignoreCancelled = true
-    )
-    public void onShopDragBefore(
-            InventoryDragEvent event
+    public PendingShopTransaction getPending(
+            UUID playerId
     ) {
 
-        if (!(event.getWhoClicked() instanceof Player player)) {
-            return;
+        if (playerId == null) {
+            return null;
         }
 
-        if (!plugin.isProtected(player)) {
-            return;
-        }
+        return pending.get(
+                playerId
+        );
+    }
 
-        if (!plugin.getConfig().getBoolean(
-                "shop.enabled",
-                true
-        )) {
-            return;
-        }
+    /**
+     * Removes a pending transaction.
+     */
+    public void clear(
+            UUID playerId
+    ) {
 
-        if (!isShopInventory(
-                event.getView().getTitle()
-        )) {
-            return;
-        }
-
-        for (ItemStack item :
-                event.getNewItems().values()) {
-
-            if (!containsProtectedItem(item)) {
-                continue;
-            }
-
-            detector.begin(player);
-
-            pendingShop.add(
-                    player.getUniqueId()
+        if (playerId != null) {
+            pending.remove(
+                    playerId
             );
-
-            return;
         }
-    }
-
-    @EventHandler(
-            priority = EventPriority.MONITOR,
-            ignoreCancelled = true
-    )
-    public void onShopDragAfter(
-            InventoryDragEvent event
-    ) {
-
-        if (!(event.getWhoClicked() instanceof Player player)) {
-            return;
-        }
-
-        if (!plugin.isProtected(player)) {
-            return;
-        }
-
-        if (!pendingShop.remove(
-                player.getUniqueId()
-        )) {
-            return;
-        }
-
-        detector.validateLater(
-                player,
-                "shop GUI drag transaction"
-        );
     }
 
     /**
-     * Validate when the shop GUI closes.
-     *
-     * This catches plugins that perform the actual sale/buy operation
-     * during close rather than click.
+     * Clears all pending transactions.
      */
-    @EventHandler(
-            priority = EventPriority.MONITOR,
-            ignoreCancelled = true
-    )
-    public void onShopClose(
-            InventoryCloseEvent event
-    ) {
+    public void clearAll() {
 
-        if (!(event.getPlayer() instanceof Player player)) {
-            return;
-        }
-
-        if (!plugin.isProtected(player)) {
-            return;
-        }
-
-        if (!plugin.getConfig().getBoolean(
-                "shop.validate-on-close",
-                true
-        )) {
-            return;
-        }
-
-        if (!isShopInventory(
-                event.getView().getTitle()
-        )) {
-            return;
-        }
-
-        detector.validateLater(
-                player,
-                "shop GUI close validation"
-        );
-
-        pendingShop.remove(
-                player.getUniqueId()
-        );
+        pending.clear();
     }
 
     /**
-     * Common command-based shop protection.
-     *
-     * Examples that can be configured:
-     *
-     * /shop
-     * /sell
-     * /sellall
-     * /ah
-     * /order
-     *
-     * The listener does not execute or cancel these commands.
-     * It only establishes a validation boundary.
+     * Removes stale pending records.
      */
-    @EventHandler(
-            priority = EventPriority.LOWEST,
-            ignoreCancelled = true
-    )
-    public void onShopCommandBefore(
-            PlayerCommandPreprocessEvent event
+    public void cleanup(
+            long maxAgeMillis
     ) {
-
-        Player player =
-                event.getPlayer();
-
-        if (!plugin.isProtected(player)) {
-            return;
-        }
-
-        if (!plugin.getConfig().getBoolean(
-                "shop.command-detection",
-                true
-        )) {
-            return;
-        }
-
-        String command =
-                extractCommand(
-                        event.getMessage()
-                );
-
-        if (command.isBlank()) {
-            return;
-        }
-
-        if (!isConfiguredShopCommand(
-                command
-        )) {
-            return;
-        }
 
         long now =
                 System.currentTimeMillis();
 
-        long cooldown =
-                plugin.getConfig().getLong(
-                        "shop.command-cooldown-ms",
-                        250L
+        pending.entrySet()
+                .removeIf(
+                        entry ->
+                                now
+                                        - entry.getValue()
+                                        .timestamp()
+                                        > maxAgeMillis
                 );
-
-        Long previous =
-                commandCooldown.put(
-                        player.getUniqueId(),
-                        now
-                );
-
-        if (previous != null
-                && now - previous < cooldown) {
-
-            return;
-        }
-
-        /*
-         * Before /sell, /shop, /order, etc.
-         */
-        detector.begin(player);
-
-        pendingShop.add(
-                player.getUniqueId()
-        );
     }
 
     /**
-     * A command can execute through another plugin after
-     * PlayerCommandPreprocessEvent. Schedule the comparison
-     * one tick later.
-     */
-    @EventHandler(
-            priority = EventPriority.MONITOR,
-            ignoreCancelled = true
-    )
-    public void onShopCommandAfter(
-            PlayerCommandPreprocessEvent event
-    ) {
-
-        Player player =
-                event.getPlayer();
-
-        if (!plugin.isProtected(player)) {
-            return;
-        }
-
-        if (!plugin.getConfig().getBoolean(
-                "shop.command-detection",
-                true
-        )) {
-            return;
-        }
-
-        String command =
-                extractCommand(
-                        event.getMessage()
-                );
-
-        if (!isConfiguredShopCommand(
-                command
-        )) {
-            return;
-        }
-
-        detector.validateLater(
-                player,
-                "shop command: /" + command
-        );
-
-        pendingShop.remove(
-                player.getUniqueId()
-        );
-    }
-
-    /**
-     * Checks whether the inventory title belongs to a configured
-     * shop interface.
+     * Determines whether an inventory title looks like a shop.
+     *
+     * Keywords are configurable so this can work with different
+     * shop/menu plugins.
      */
     private boolean isShopInventory(
             String title
     ) {
 
-        if (title == null || title.isBlank()) {
+        if (title == null
+                || title.isBlank()) {
             return false;
         }
 
         String normalized =
-                stripColor(
+                stripFormatting(
                         title
-                ).toLowerCase(
-                        Locale.ROOT
-                );
+                ).toLowerCase();
 
         var keywords =
                 plugin.getConfig()
                         .getStringList(
-                                "shop.inventory-title-keywords"
+                                "shop.title-keywords"
                         );
 
         if (keywords.isEmpty()) {
 
-            keywords = java.util.List.of(
-                    "shop",
-                    "sell",
-                    "buy",
-                    "order",
-                    "auction",
-                    "market",
-                    "store"
-            );
+            keywords =
+                    java.util.List.of(
+                            "shop",
+                            "store",
+                            "market",
+                            "sell",
+                            "buy",
+                            "order",
+                            "auction"
+                    );
         }
 
         for (String keyword :
@@ -456,9 +277,9 @@ public final class ShopTransactionListener
             }
 
             if (normalized.contains(
-                    keyword.toLowerCase(
-                            Locale.ROOT
-                    )
+                    stripFormatting(
+                            keyword
+                    ).toLowerCase()
             )) {
                 return true;
             }
@@ -467,131 +288,53 @@ public final class ShopTransactionListener
         return false;
     }
 
-    /**
-     * Reads the first command token.
-     *
-     * "/sell all diamond" -> "sell"
-     */
-    private String extractCommand(
-            String message
+    private String resolveItemType(
+            ItemStack current,
+            ItemStack cursor
     ) {
 
-        if (message == null) {
-            return "";
+        if (current != null
+                && !current.getType()
+                .isAir()) {
+
+            return current.getType()
+                    .name();
         }
 
-        String value =
-                message.trim();
+        if (cursor != null
+                && !cursor.getType()
+                .isAir()) {
 
-        if (value.startsWith("/")) {
-            value = value.substring(1);
+            return cursor.getType()
+                    .name();
         }
 
-        int space =
-                value.indexOf(' ');
-
-        if (space >= 0) {
-            value =
-                    value.substring(
-                            0,
-                            space
-                    );
-        }
-
-        int colon =
-                value.indexOf(':');
-
-        /*
-         * Handles namespaced commands such as:
-         * /plugin:sell
-         */
-        if (colon >= 0) {
-            value =
-                    value.substring(
-                            colon + 1
-                    );
-        }
-
-        return value.toLowerCase(
-                Locale.ROOT
-        );
+        return "UNKNOWN";
     }
 
-    /**
-     * Configurable command list.
-     */
-    private boolean isConfiguredShopCommand(
-            String command
+    private int resolveAmount(
+            ItemStack current,
+            ItemStack cursor
     ) {
 
-        if (command == null
-                || command.isBlank()) {
-            return false;
+        if (current != null
+                && !current.getType()
+                .isAir()) {
+
+            return current.getAmount();
         }
 
-        var commands =
-                plugin.getConfig()
-                        .getStringList(
-                                "shop.commands"
-                        );
+        if (cursor != null
+                && !cursor.getType()
+                .isAir()) {
 
-        if (commands.isEmpty()) {
-
-            commands = java.util.List.of(
-                    "shop",
-                    "sell",
-                    "sellall",
-                    "sellhand",
-                    "buy",
-                    "order",
-                    "orders",
-                    "ah",
-                    "auction",
-                    "market",
-                    "store"
-            );
+            return cursor.getAmount();
         }
 
-        for (String configured :
-                commands) {
-
-            if (configured == null
-                    || configured.isBlank()) {
-                continue;
-            }
-
-            String normalized =
-                    configured
-                            .toLowerCase(
-                                    Locale.ROOT
-                            )
-                            .replace(
-                                    "/",
-                                    ""
-                            );
-
-            if (normalized.equals(
-                    command
-            )) {
-                return true;
-            }
-        }
-
-        return false;
+        return 0;
     }
 
-    private boolean containsProtectedItem(
-            ItemStack item
-    ) {
-
-        return item != null
-                && !item.getType().isAir()
-                && plugin.isProtectedItem(
-                item
-        );
-    }
-
-    private String stripColor(
+    private String stripFormatting(
             String text
     ) {
 
@@ -599,20 +342,43 @@ public final class ShopTransactionListener
             return "";
         }
 
-        return org.bukkit.ChatColor
-                .stripColor(text)
-                .replace(
-                        "§",
+        return text
+                .replaceAll(
+                        "§[0-9a-fk-or]",
+                        ""
+                )
+                .replaceAll(
+                        "&#[A-Fa-f0-9]{6}",
                         ""
                 );
     }
 
-    /**
-     * Runtime cleanup.
-     */
-    public void clear() {
+    public record PendingShopTransaction(
 
-        pendingShop.clear();
-        commandCooldown.clear();
+            String transactionId,
+
+            UUID playerId,
+
+            String itemType,
+
+            int amount,
+
+            String shopTitle,
+
+            int slot,
+
+            long timestamp
+
+    ) {
+
+        public boolean isShulker() {
+
+            return itemType != null
+                    && itemType
+                    .toUpperCase()
+                    .endsWith(
+                            "_SHULKER_BOX"
+                    );
+        }
     }
-          }
+    }
