@@ -1,33 +1,18 @@
 package xyz.zyrex.bedrockantidupe;
 
 import org.bukkit.Material;
-import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.EnumSet;
+import java.util.List;
 import java.util.Set;
-import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 
-/**
- * Detects suspicious inventory duplication by comparing
- * transaction snapshots.
- *
- * Important:
- * This class does NOT punish a player merely because an item
- * increased. Normal gameplay can legitimately increase items.
- *
- * A confirmed dupe requires the transaction to be marked
- * suspicious by the surrounding listeners/checks.
- */
 public final class DupeDetector {
 
     private final BedrockAntiDupe plugin;
-
     private final TransactionLedger ledger;
-
-    private final Set<UUID> checking =
-            ConcurrentHashMap.newKeySet();
 
     private final Set<Material> trackedMaterials =
             EnumSet.noneOf(Material.class);
@@ -36,249 +21,204 @@ public final class DupeDetector {
             BedrockAntiDupe plugin,
             TransactionLedger ledger
     ) {
-
         this.plugin = plugin;
         this.ledger = ledger;
 
         loadTrackedMaterials();
     }
 
-    /**
-     * Loads materials that are especially useful for
-     * duplication detection.
-     *
-     * Shulker boxes are included regardless of color.
-     */
     private void loadTrackedMaterials() {
 
         trackedMaterials.clear();
 
-        for (Material material :
-                Material.values()) {
+        /*
+         * Shulker protection.
+         *
+         * This catches every vanilla colored shulker box because
+         * all of them use the *_SHULKER_BOX material naming scheme.
+         */
+        if (plugin.getConfig().getBoolean(
+                "shulker.enabled",
+                true
+        )) {
 
-            String name =
-                    material.name();
+            for (Material material : Material.values()) {
 
-            if (name.endsWith(
-                    "_SHULKER_BOX"
-            )) {
-
-                trackedMaterials.add(
-                        material
-                );
+                if (isShulker(material)) {
+                    trackedMaterials.add(material);
+                }
             }
         }
 
-        addIfExists("DIAMOND");
-        addIfExists("EMERALD");
-        addIfExists("NETHERITE_INGOT");
-        addIfExists("NETHERITE_BLOCK");
-        addIfExists("ANCIENT_DEBRIS");
-        addIfExists("GOLD_INGOT");
-        addIfExists("IRON_INGOT");
-    }
+        /*
+         * Optional configured materials.
+         */
+        List<String> configured =
+                plugin.getConfig()
+                        .getStringList(
+                                "detection.tracked-materials"
+                        );
 
-    private void addIfExists(
-            String name
-    ) {
+        for (String name : configured) {
 
-        try {
+            if (name == null || name.isBlank()) {
+                continue;
+            }
 
-            trackedMaterials.add(
-                    Material.valueOf(name)
-            );
+            try {
 
-        } catch (IllegalArgumentException ignored) {
-            // Material does not exist on this server version.
+                Material material =
+                        Material.valueOf(
+                                name.toUpperCase()
+                        );
+
+                trackedMaterials.add(material);
+
+            } catch (IllegalArgumentException ignored) {
+
+                plugin.getLogger().warning(
+                        "Unknown tracked material: "
+                                + name
+                );
+            }
         }
     }
 
     /**
-     * Checks a completed transaction.
-     *
-     * Returns a detection result instead of immediately
-     * deleting items.
+     * Inspects one completed inventory transaction.
      */
     public DetectionResult inspect(
-            TransactionLedger.TransactionRecord transaction
+            TransactionLedger.TransactionRecord record
     ) {
 
-        if (transaction == null) {
+        if (record == null) {
 
             return DetectionResult.clean(
-                    null,
-                    null,
                     "No transaction."
             );
         }
 
-        UUID playerId =
-                transaction.playerId();
-
-        if (playerId == null) {
+        if (!plugin.getConfig().getBoolean(
+                "detection.enabled",
+                true
+        )) {
 
             return DetectionResult.clean(
-                    transaction.transactionId(),
-                    null,
-                    "No player UUID."
+                    "Detection disabled."
             );
         }
 
-        /*
-         * Prevent recursive checks caused by inventory changes
-         * made by the protection system itself.
-         */
-        if (!checking.add(playerId)) {
+        List<Change> suspicious =
+                new ArrayList<>();
 
-            return DetectionResult.clean(
-                    transaction.transactionId(),
-                    playerId,
-                    "Already checking player."
-            );
-        }
+        for (TransactionLedger.ItemChange change :
+                record.changes()) {
 
-        try {
+            ItemStack before =
+                    change.before();
 
-            for (Material material :
-                    trackedMaterials) {
+            ItemStack after =
+                    change.after();
 
-                int delta =
-                        transaction.materialDelta(
-                                material
-                        );
-
-                if (delta <= 0) {
-                    continue;
-                }
-
-                if (looksSuspicious(
-                        transaction,
-                        material,
-                        delta
-                )) {
-
-                    return DetectionResult.suspicious(
-                            transaction.transactionId(),
-                            playerId,
-                            material,
-                            delta,
-                            reason(
-                                    transaction,
-                                    material,
-                                    delta
-                            )
-                    );
-                }
+            if (after == null
+                    || after.getType().isAir()) {
+                continue;
             }
 
-            return DetectionResult.clean(
-                    transaction.transactionId(),
-                    playerId,
-                    "No suspicious inventory duplication detected."
-            );
+            Material material =
+                    after.getType();
 
-        } finally {
+            /*
+             * We only perform the high-confidence inventory
+             * increase check on tracked materials.
+             */
+            if (!trackedMaterials.contains(material)) {
+                continue;
+            }
 
-            checking.remove(playerId);
-        }
-    }
+            int beforeAmount =
+                    before == null
+                            ? 0
+                            : before.getAmount();
 
-    /**
-     * Performs additional conservative checks.
-     */
-    private boolean looksSuspicious(
-            TransactionLedger.TransactionRecord transaction,
-            Material material,
-            int delta
-    ) {
+            int afterAmount =
+                    after.getAmount();
 
-        String source =
-                transaction.source();
+            int increase =
+                    afterAmount
+                            - beforeAmount;
 
-        if (source == null) {
-            source = "";
-        }
+            if (increase <= 0) {
+                continue;
+            }
 
-        source =
-                source.toUpperCase();
+            if (isShulker(material)
+                    && plugin.getConfig()
+                    .getBoolean(
+                            "shulker.inspect-container-transactions",
+                            true
+                    )) {
 
-        /*
-         * These sources require deeper transaction correlation.
-         * A simple inventory increase must not automatically be
-         * considered a confirmed dupe.
-         */
-        boolean sensitiveSource =
-                source.contains("SHOP")
-                        || source.contains("SELL")
-                        || source.contains("ORDER")
-                        || source.contains("SHULKER")
-                        || source.contains("PISTON")
-                        || source.contains("CLICK")
-                        || source.contains("CONTAINER")
-                        || source.contains("CRAFT");
-
-        /*
-         * Extremely large instantaneous increases are suspicious,
-         * but the actual threshold is configurable.
-         */
-        int threshold =
-                Math.max(
-                        1,
-                        plugin.getConfig().getInt(
-                                "detection.instant-increase-threshold",
-                                256
+                suspicious.add(
+                        new Change(
+                                change.slot(),
+                                material,
+                                increase,
+                                "SHULKER_TRANSACTION"
                         )
                 );
 
-        if (delta >= threshold) {
-            return true;
+                continue;
+            }
+
+            int threshold =
+                    Math.max(
+                            1,
+                            plugin.getConfig()
+                                    .getInt(
+                                            "detection.instant-increase-threshold",
+                                            256
+                                    )
+                    );
+
+            if (increase >= threshold) {
+
+                suspicious.add(
+                        new Change(
+                                change.slot(),
+                                material,
+                                increase,
+                                "LARGE_INVENTORY_INCREASE"
+                        )
+                );
+            }
         }
 
         /*
-         * Sensitive transactions are returned for correlation
-         * by the higher-level detection pipeline.
+         * No suspicious inventory increase.
          */
-        return sensitiveSource
-                && delta > 0
-                && plugin.getConfig().getBoolean(
-                        "detection.inspect-sensitive-transactions",
-                        true
-                );
+        if (suspicious.isEmpty()) {
+
+            return DetectionResult.clean(
+                    "No confirmed suspicious increase."
+            );
+        }
+
+        /*
+         * IMPORTANT:
+         *
+         * A suspicious inventory increase is NOT automatically
+         * treated as a confirmed dupe.
+         *
+         * The action layer must correlate this result with
+         * additional evidence before deleting anything.
+         */
+        return DetectionResult.suspicious(
+                record,
+                suspicious
+        );
     }
 
-    private String reason(
-            TransactionLedger.TransactionRecord transaction,
-            Material material,
-            int delta
-    ) {
-
-        return "Suspicious increase of "
-                + delta
-                + "x "
-                + material.name()
-                + " during "
-                + transaction.source()
-                + " transaction.";
-    }
-
-    /**
-     * Checks whether a material is a tracked shulker.
-     */
-    public boolean isShulker(
-            Material material
-    ) {
-
-        return material != null
-                && material.name()
-                .endsWith("_SHULKER_BOX");
-    }
-
-    /**
-     * Checks whether an ItemStack is a shulker box.
-     *
-     * This automatically covers every vanilla shulker color
-     * available on the server version.
-     */
     public boolean isShulker(
             ItemStack item
     ) {
@@ -289,144 +229,121 @@ public final class DupeDetector {
                 );
     }
 
-    /**
-     * Checks a player's current inventory for tracked materials.
-     */
-    public int count(
-            Player player,
+    public boolean isShulker(
             Material material
     ) {
 
-        if (player == null
-                || material == null) {
-
-            return 0;
-        }
-
-        int total = 0;
-
-        for (ItemStack item :
-                player.getInventory()
-                        .getContents()) {
-
-            if (item != null
-                    && item.getType() == material) {
-
-                total += item.getAmount();
-            }
-        }
-
-        return total;
+        return material != null
+                && material.name()
+                .endsWith(
+                        "_SHULKER_BOX"
+                );
     }
 
-    /**
-     * Returns a copy of the tracked material set.
-     */
-    public Set<Material>
-    getTrackedMaterials() {
+    public Set<Material> getTrackedMaterials() {
 
-        return Set.copyOf(
+        return Collections.unmodifiableSet(
                 trackedMaterials
         );
     }
 
-    /**
-     * Manually marks a transaction as confirmed suspicious.
-     *
-     * This is intended for specialized exploit listeners,
-     * not ordinary inventory events.
-     */
-    public DetectionResult confirm(
-            TransactionLedger.TransactionRecord transaction,
-            Material material,
-            int amount,
-            String reason
-    ) {
+    public void reload() {
 
-        if (transaction == null
-                || material == null
-                || amount <= 0) {
-
-            return DetectionResult.clean(
-                    transaction == null
-                            ? null
-                            : transaction.transactionId(),
-                    transaction == null
-                            ? null
-                            : transaction.playerId(),
-                    "Invalid confirmation."
-            );
-        }
-
-        return DetectionResult.suspicious(
-                transaction.transactionId(),
-                transaction.playerId(),
-                material,
-                amount,
-                reason == null
-                        ? "Confirmed suspicious transaction."
-                        : reason
-        );
+        loadTrackedMaterials();
     }
 
-    /**
-     * Result returned by the detector.
-     */
-    public record DetectionResult(
+    public record Change(
 
-            String transactionId,
-
-            UUID playerId,
+            int slot,
 
             Material material,
 
-            int amount,
+            int increase,
+
+            String reason
+
+    ) {
+    }
+
+    public record DetectionResult(
 
             boolean suspicious,
 
+            boolean confirmed,
+
+            TransactionLedger.TransactionRecord transaction,
+
+            List<Change> changes,
+
             String reason
 
     ) {
 
-        public static DetectionResult suspicious(
-                String transactionId,
-                UUID playerId,
-                Material material,
-                int amount,
+        public DetectionResult {
+
+            changes =
+                    List.copyOf(changes);
+        }
+
+        public static DetectionResult clean(
                 String reason
         ) {
 
             return new DetectionResult(
-                    transactionId,
-                    playerId,
-                    material,
-                    amount,
-                    true,
+                    false,
+                    false,
+                    null,
+                    List.of(),
                     reason
             );
         }
 
-        public static DetectionResult clean(
-                String transactionId,
-                UUID playerId,
-                String reason
+        public static DetectionResult suspicious(
+                TransactionLedger.TransactionRecord record,
+                List<Change> changes
         ) {
 
             return new DetectionResult(
-                    transactionId,
-                    playerId,
-                    null,
-                    0,
+                    true,
                     false,
-                    reason
+                    record,
+                    changes,
+                    "Suspicious inventory increase."
+            );
+        }
+
+        /**
+         * Creates a confirmed result only after another
+         * subsystem has independently established that the
+         * transaction is a duplicate.
+         */
+        public DetectionResult confirm(
+                String confirmationReason
+        ) {
+
+            return new DetectionResult(
+                    true,
+                    true,
+                    transaction,
+                    changes,
+                    confirmationReason
             );
         }
 
         public boolean isConfirmedSuspicious() {
 
-            return suspicious
-                    && material != null
-                    && amount > 0;
+            return suspicious && confirmed;
+        }
+
+        public int totalIncrease() {
+
+            int total = 0;
+
+            for (Change change : changes) {
+                total += change.increase();
+            }
+
+            return total;
         }
     }
                 }
