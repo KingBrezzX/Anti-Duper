@@ -31,12 +31,23 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
-public final class BedrockAntiDupe extends JavaPlugin implements Listener {
+public final class BedrockAntiDupe extends JavaPlugin
+        implements Listener {
 
-    private final Map<UUID, Integer> violations = new ConcurrentHashMap<>();
-    private final Map<UUID, Long> transactionCooldown = new ConcurrentHashMap<>();
-    private final Map<UUID, Long> staffCooldown = new ConcurrentHashMap<>();
-    private final Map<UUID, Long> discordCooldown = new ConcurrentHashMap<>();
+    private final Map<UUID, Integer> violations =
+            new ConcurrentHashMap<>();
+
+    private final Map<UUID, Long> transactionCooldown =
+            new ConcurrentHashMap<>();
+
+    private final Map<UUID, Long> staffCooldown =
+            new ConcurrentHashMap<>();
+
+    private final Map<UUID, Long> discordCooldown =
+            new ConcurrentHashMap<>();
+
+    private TransactionLedger ledger;
+    private DupeDetector detector;
 
     private String actionMode;
 
@@ -49,104 +60,170 @@ public final class BedrockAntiDupe extends JavaPlugin implements Listener {
 
         loadSettings();
 
+        ledger = new TransactionLedger();
+
+        detector = new DupeDetector(
+                this,
+                ledger
+        );
+
         httpClient = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(5))
+                .connectTimeout(
+                        Duration.ofSeconds(5)
+                )
                 .build();
 
-        Bukkit.getPluginManager().registerEvents(this, this);
+        Bukkit.getPluginManager()
+                .registerEvents(this, this);
+
+        Bukkit.getPluginManager()
+                .registerEvents(
+                        new ProtectionListener(
+                                this,
+                                detector
+                        ),
+                        this
+                );
 
         if (getCommand("antidupe") != null) {
-            getCommand("antidupe").setExecutor(new AntiDupeCommand(this));
+
+            getCommand("antidupe")
+                    .setExecutor(
+                            new AntiDupeCommand(this)
+                    );
         }
 
-        getLogger().info("======================================");
-        getLogger().info(" BedrockAntiDupe enabled");
-        getLogger().info(" Paper 26.2");
-        getLogger().info(" Java 25");
-        getLogger().info(" Action: " + actionMode);
-        getLogger().info("======================================");
+        getLogger().info(
+                "BedrockAntiDupe enabled."
+        );
+
+        getLogger().info(
+                "Paper 26.2 | Java 25"
+        );
+
+        getLogger().info(
+                "Protection mode: "
+                        + actionMode
+        );
     }
 
     @Override
     public void onDisable() {
+
+        if (detector != null) {
+            detector.clear();
+        }
 
         violations.clear();
         transactionCooldown.clear();
         staffCooldown.clear();
         discordCooldown.clear();
 
-        getLogger().info("BedrockAntiDupe disabled.");
+        getLogger().info(
+                "BedrockAntiDupe disabled."
+        );
     }
 
     public void loadSettings() {
 
         actionMode = getConfig()
-                .getString("action.mode", "REMOVE_AND_ALERT")
-                .toUpperCase(Locale.ROOT);
+                .getString(
+                        "action.mode",
+                        "REMOVE_AND_ALERT"
+                )
+                .toUpperCase(
+                        Locale.ROOT
+                );
     }
 
     public void reloadPlugin() {
 
         reloadConfig();
         loadSettings();
+
+        /*
+         * Discord/notification cooldown state is intentionally
+         * preserved during reload so /antidupe reload cannot
+         * accidentally create a notification burst.
+         */
     }
 
     public boolean isEnabled() {
 
-        return getConfig().getBoolean(
-                "settings.enabled",
-                true
-        );
+        return getConfig()
+                .getBoolean(
+                        "settings.enabled",
+                        true
+                );
     }
 
-    public boolean isProtected(Player player) {
+    public boolean isProtected(
+            Player player
+    ) {
 
-        if (!isEnabled()) {
+        if (player == null
+                || !isEnabled()) {
+
             return false;
         }
 
-        boolean bedrock = isBedrockPlayer(player);
+        boolean bedrock =
+                isBedrockPlayer(player);
 
         if (bedrock) {
-            return getConfig().getBoolean(
-                    "settings.protect-bedrock",
-                    true
-            );
+
+            return getConfig()
+                    .getBoolean(
+                            "settings.protect-bedrock",
+                            true
+                    );
         }
 
-        return getConfig().getBoolean(
-                "settings.protect-java",
-                true
-        );
+        return getConfig()
+                .getBoolean(
+                        "settings.protect-java",
+                        true
+                );
     }
 
     /**
-     * Detects players connected through Floodgate.
+     * Floodgate detection through reflection.
      *
-     * Reflection is intentionally used so the plugin can still
-     * load when Floodgate is not installed.
+     * This keeps the plugin loadable even if Floodgate
+     * is temporarily unavailable.
      */
-    public boolean isBedrockPlayer(Player player) {
+    public boolean isBedrockPlayer(
+            Player player
+    ) {
+
+        if (player == null) {
+            return false;
+        }
 
         try {
 
-            Class<?> apiClass = Class.forName(
-                    "org.geysermc.floodgate.api.FloodgateApi"
-            );
-
-            Object api = apiClass
-                    .getMethod("getInstance")
-                    .invoke(null);
-
-            Object result = apiClass
-                    .getMethod(
-                            "isFloodgatePlayer",
-                            UUID.class
-                    )
-                    .invoke(
-                            api,
-                            player.getUniqueId()
+            Class<?> apiClass =
+                    Class.forName(
+                            "org.geysermc.floodgate.api.FloodgateApi"
                     );
+
+            Object api =
+                    apiClass
+                            .getMethod(
+                                    "getInstance"
+                            )
+                            .invoke(null);
+
+            Object result =
+                    apiClass
+                            .getMethod(
+                                    "isFloodgatePlayer",
+                                    UUID.class
+                            )
+                            .invoke(
+                                    api,
+                                    player.getUniqueId()
+                            );
 
             return result instanceof Boolean
                     && (Boolean) result;
@@ -157,81 +234,120 @@ public final class BedrockAntiDupe extends JavaPlugin implements Listener {
         }
     }
 
-    /**
-     * Prevents excessive processing from the same player.
-     */
-    public boolean isTransactionRateLimited(Player player) {
+    public boolean isTransactionRateLimited(
+            Player player
+    ) {
 
-        long now = System.currentTimeMillis();
+        if (player == null) {
+            return true;
+        }
 
-        long cooldown = getConfig().getLong(
-                "settings.transaction-cooldown-ms",
-                150
-        );
+        long now =
+                System.currentTimeMillis();
 
-        Long previous = transactionCooldown.put(
-                player.getUniqueId(),
-                now
-        );
+        long cooldown =
+                getConfig().getLong(
+                        "settings.transaction-cooldown-ms",
+                        150
+                );
+
+        Long previous =
+                transactionCooldown.put(
+                        player.getUniqueId(),
+                        now
+                );
 
         return previous != null
                 && now - previous < cooldown;
     }
 
     /**
-     * Items that need additional validation.
+     * Protected item detection.
      */
-    public boolean isProtectedItem(ItemStack item) {
+    public boolean isProtectedItem(
+            ItemStack item
+    ) {
 
-        if (item == null || item.getType().isAir()) {
+        if (item == null
+                || item.getType().isAir()) {
+
             return false;
         }
 
-        Material material = item.getType();
+        Material material =
+                item.getType();
 
-        if (material.name().contains("SHULKER_BOX")) {
-            return getConfig().getBoolean(
-                    "containers.shulker-box",
-                    true
-            );
+        String name =
+                material.name();
+
+        if (name.contains(
+                "SHULKER_BOX"
+        )) {
+
+            return getConfig()
+                    .getBoolean(
+                            "containers.shulker-box",
+                            true
+                    );
         }
 
-        if (material == Material.ENDER_CHEST) {
-            return getConfig().getBoolean(
-                    "containers.ender-chest",
-                    true
-            );
+        if (material ==
+                Material.ENDER_CHEST) {
+
+            return getConfig()
+                    .getBoolean(
+                            "containers.ender-chest",
+                            true
+                    );
         }
 
-        if (material == Material.CHEST) {
-            return getConfig().getBoolean(
-                    "containers.chest",
-                    true
-            );
+        if (material ==
+                Material.CHEST) {
+
+            return getConfig()
+                    .getBoolean(
+                            "containers.chest",
+                            true
+                    );
         }
 
-        if (material == Material.TRAPPED_CHEST) {
-            return getConfig().getBoolean(
-                    "containers.trapped-chest",
-                    true
-            );
+        if (material ==
+                Material.TRAPPED_CHEST) {
+
+            return getConfig()
+                    .getBoolean(
+                            "containers.trapped-chest",
+                            true
+                    );
         }
 
         return false;
     }
 
     /**
-     * Check the player's inventory for impossible stack amounts.
+     * Detect impossible stack amounts.
      */
-    public boolean containsInvalidStack(Player player) {
+    public boolean containsInvalidStack(
+            Player player
+    ) {
 
-        for (ItemStack item : player.getInventory().getContents()) {
+        if (player == null) {
+            return false;
+        }
 
-            if (item == null || item.getType().isAir()) {
+        for (ItemStack item :
+                player.getInventory()
+                        .getContents()) {
+
+            if (item == null
+                    || item.getType().isAir()) {
+
                 continue;
             }
 
-            if (item.getAmount() > item.getMaxStackSize()) {
+            if (item.getAmount()
+                    > item.getMaxStackSize()) {
+
                 return true;
             }
         }
@@ -240,55 +356,72 @@ public final class BedrockAntiDupe extends JavaPlugin implements Listener {
     }
 
     /**
-     * Remove only physically impossible stacks.
+     * Removes only physically impossible stack sizes.
      *
-     * Normal legitimate stacks are never removed here.
+     * It does NOT blindly delete normal shulkers/chests.
      */
-    public void removeInvalidStacks(Player player) {
+    public void removeInvalidStacks(
+            Player player
+    ) {
+
+        if (player == null) {
+            return;
+        }
 
         ItemStack[] contents =
-                player.getInventory().getContents();
+                player.getInventory()
+                        .getContents();
 
         boolean changed = false;
 
-        for (int slot = 0; slot < contents.length; slot++) {
+        for (int slot = 0;
+             slot < contents.length;
+             slot++) {
 
-            ItemStack item = contents[slot];
+            ItemStack item =
+                    contents[slot];
 
-            if (item == null || item.getType().isAir()) {
+            if (item == null
+                    || item.getType().isAir()) {
+
                 continue;
             }
 
-            if (item.getAmount() > item.getMaxStackSize()) {
+            if (item.getAmount()
+                    > item.getMaxStackSize()) {
 
                 contents[slot] = null;
                 changed = true;
             }
         }
 
-        if (changed) {
+        if (!changed) {
+            return;
+        }
 
-            player.getInventory().setContents(contents);
+        player.getInventory()
+                .setContents(contents);
 
-            if (getConfig().getBoolean(
-                    "action.remove.resync-inventory",
-                    true
-            )) {
+        if (getConfig().getBoolean(
+                "action.remove.resync-inventory",
+                true
+        )) {
 
-                player.updateInventory();
-            }
+            player.updateInventory();
         }
     }
 
     /**
-     * Main detection handler.
+     * Central violation handler.
      */
     public void handleViolation(
             Player player,
             String reason
     ) {
 
-        if (player == null || !player.isOnline()) {
+        if (player == null
+                || !player.isOnline()) {
+
             return;
         }
 
@@ -296,19 +429,24 @@ public final class BedrockAntiDupe extends JavaPlugin implements Listener {
             return;
         }
 
-        int violation = violations.merge(
-                player.getUniqueId(),
-                1,
-                Integer::sum
-        );
+        int violation =
+                violations.merge(
+                        player.getUniqueId(),
+                        1,
+                        Integer::sum
+                );
 
         boolean remove =
                 actionMode.equals("REMOVE")
-                        || actionMode.equals("REMOVE_AND_ALERT");
+                        || actionMode.equals(
+                        "REMOVE_AND_ALERT"
+                );
 
         boolean alert =
                 actionMode.equals("ALERT")
-                        || actionMode.equals("REMOVE_AND_ALERT");
+                        || actionMode.equals(
+                        "REMOVE_AND_ALERT"
+                );
 
         if (remove
                 && getConfig().getBoolean(
@@ -316,7 +454,9 @@ public final class BedrockAntiDupe extends JavaPlugin implements Listener {
                 true
         )) {
 
-            removeInvalidStacks(player);
+            removeInvalidStacks(
+                    player
+            );
         }
 
         if (alert
@@ -345,7 +485,10 @@ public final class BedrockAntiDupe extends JavaPlugin implements Listener {
     }
 
     /**
-     * Inventory transaction monitoring.
+     * Legacy/basic inventory listener.
+     *
+     * ProtectionListener performs the full before/after
+     * transaction lifecycle.
      */
     @EventHandler(
             priority = EventPriority.MONITOR,
@@ -355,7 +498,9 @@ public final class BedrockAntiDupe extends JavaPlugin implements Listener {
             InventoryClickEvent event
     ) {
 
-        if (!(event.getWhoClicked() instanceof Player player)) {
+        if (!(event.getWhoClicked()
+                instanceof Player player)) {
+
             return;
         }
 
@@ -370,19 +515,24 @@ public final class BedrockAntiDupe extends JavaPlugin implements Listener {
             return;
         }
 
-        if (isTransactionRateLimited(player)) {
+        if (isTransactionRateLimited(
+                player
+        )) {
             return;
         }
 
-        ItemStack current = event.getCurrentItem();
-        ItemStack cursor = event.getCursor();
+        ItemStack current =
+                event.getCurrentItem();
+
+        ItemStack cursor =
+                event.getCursor();
 
         if (isProtectedItem(current)
                 || isProtectedItem(cursor)) {
 
-            validateInventoryNextTick(
+            detector.validateLater(
                     player,
-                    "protected inventory transaction"
+                    "inventory transaction"
             );
         }
     }
@@ -395,7 +545,9 @@ public final class BedrockAntiDupe extends JavaPlugin implements Listener {
             InventoryDragEvent event
     ) {
 
-        if (!(event.getWhoClicked() instanceof Player player)) {
+        if (!(event.getWhoClicked()
+                instanceof Player player)) {
+
             return;
         }
 
@@ -404,23 +556,20 @@ public final class BedrockAntiDupe extends JavaPlugin implements Listener {
         }
 
         if (!getConfig().getBoolean(
-                "inventory.drag",
+                "detection.inventory",
                 true
         )) {
             return;
         }
 
-        if (isTransactionRateLimited(player)) {
-            return;
-        }
-
-        for (ItemStack item : event.getNewItems().values()) {
+        for (ItemStack item :
+                event.getNewItems().values()) {
 
             if (isProtectedItem(item)) {
 
-                validateInventoryNextTick(
+                detector.validateLater(
                         player,
-                        "protected inventory drag"
+                        "inventory drag transaction"
                 );
 
                 return;
@@ -429,7 +578,9 @@ public final class BedrockAntiDupe extends JavaPlugin implements Listener {
     }
 
     /**
-     * Piston -> shulker/container monitoring.
+     * Piston event.
+     *
+     * Actual state validation is delegated to the detector.
      */
     @EventHandler(
             priority = EventPriority.MONITOR,
@@ -453,34 +604,23 @@ public final class BedrockAntiDupe extends JavaPlugin implements Listener {
             return;
         }
 
-        event.getBlocks().forEach(block -> {
+        for (var block :
+                event.getBlocks()) {
 
-            Material type = block.getType();
-
-            if (type.name().contains("SHULKER_BOX")
-                    && getConfig().getBoolean(
-                    "piston.protect-shulker",
-                    true
+            if (!isProtectedBlock(
+                    block.getType()
             )) {
 
-                notifyNearbyPlayers(
-                        block.getLocation(),
-                        "piston interaction with shulker"
-                );
+                continue;
             }
 
-            if (isContainerMaterial(type)
-                    && getConfig().getBoolean(
-                    "piston.protect-container",
-                    true
-            )) {
-
-                notifyNearbyPlayers(
-                        block.getLocation(),
-                        "piston interaction with container"
-                );
-            }
-        });
+            notifyNearbyPlayers(
+                    block.getLocation().getWorld()
+                            .getPlayers(),
+                    block,
+                    "piston extension"
+            );
+        }
     }
 
     @EventHandler(
@@ -505,21 +645,25 @@ public final class BedrockAntiDupe extends JavaPlugin implements Listener {
             return;
         }
 
-        event.getBlocks().forEach(block -> {
+        for (var block :
+                event.getBlocks()) {
 
-            if (block.getType().name().contains("SHULKER_BOX")) {
+            if (!isProtectedBlock(
+                    block.getType()
+            )) {
 
-                notifyNearbyPlayers(
-                        block.getLocation(),
-                        "piston retract with shulker"
-                );
+                continue;
             }
-        });
+
+            notifyNearbyPlayers(
+                    block.getLocation().getWorld()
+                            .getPlayers(),
+                    block,
+                    "piston retraction"
+            );
+        }
     }
 
-    /**
-     * Explosion monitoring.
-     */
     @EventHandler(
             priority = EventPriority.MONITOR,
             ignoreCancelled = true
@@ -535,39 +679,25 @@ public final class BedrockAntiDupe extends JavaPlugin implements Listener {
             return;
         }
 
-        for (var block : event.blockList()) {
+        for (var block :
+                event.blockList()) {
 
-            Material type = block.getType();
-
-            if (type.name().contains("SHULKER_BOX")
-                    && getConfig().getBoolean(
-                    "explosion.protect-shulkers",
-                    true
+            if (!isProtectedBlock(
+                    block.getType()
             )) {
 
-                notifyNearbyPlayers(
-                        block.getLocation(),
-                        "explosion affecting shulker"
-                );
+                continue;
             }
 
-            if (isContainerMaterial(type)
-                    && getConfig().getBoolean(
-                    "explosion.protect-containers",
-                    true
-            )) {
-
-                notifyNearbyPlayers(
-                        block.getLocation(),
-                        "explosion affecting container"
-                );
-            }
+            notifyNearbyPlayers(
+                    block.getLocation().getWorld()
+                            .getPlayers(),
+                    block,
+                    "explosion affecting protected block"
+            );
         }
     }
 
-    /**
-     * Shulker break monitoring.
-     */
     @EventHandler(
             priority = EventPriority.MONITOR,
             ignoreCancelled = true
@@ -576,147 +706,167 @@ public final class BedrockAntiDupe extends JavaPlugin implements Listener {
             BlockBreakEvent event
     ) {
 
-        Player player = event.getPlayer();
+        Player player =
+                event.getPlayer();
 
         if (!isProtected(player)) {
             return;
         }
 
-        Material type = event.getBlock().getType();
+        Material material =
+                event.getBlock().getType();
 
-        if (type.name().contains("SHULKER_BOX")
-                && getConfig().getBoolean(
-                "detection.shulker",
-                true
-        )) {
+        if (material.name()
+                .contains("SHULKER_BOX")) {
 
-            validateInventoryNextTick(
+            if (!getConfig().getBoolean(
+                    "detection.shulker",
+                    true
+            )) {
+                return;
+            }
+
+            detector.begin(player);
+
+            detector.validateLater(
                     player,
                     "shulker break"
             );
+
+            return;
         }
 
-        if (type == Material.ENDER_CHEST
-                && getConfig().getBoolean(
-                "detection.ender-chest",
-                true
+        if (isContainerMaterial(
+                material
         )) {
 
-            validateInventoryNextTick(
+            detector.begin(player);
+
+            detector.validateLater(
                     player,
-                    "ender chest interaction"
+                    "container break"
             );
         }
     }
 
     @EventHandler
-    public void onJoin(PlayerJoinEvent event) {
+    public void onJoin(
+            PlayerJoinEvent event
+    ) {
 
-        Player player = event.getPlayer();
+        Player player =
+                event.getPlayer();
 
         if (!isProtected(player)) {
             return;
         }
 
-        /*
-         * Small delayed validation after login.
-         * This helps catch impossible inventory states after
-         * reconnect/rollback without continuously scanning.
-         */
-        Bukkit.getScheduler().runTaskLater(
-                this,
-                () -> validateInventory(
-                        player,
-                        "join/reconnect validation"
-                ),
-                20L
-        );
+        Bukkit.getScheduler()
+                .runTaskLater(
+                        this,
+                        () -> {
+
+                            if (!player.isOnline()) {
+                                return;
+                            }
+
+                            detector.reset(
+                                    player
+                            );
+
+                        },
+                        20L
+                );
     }
 
     @EventHandler
-    public void onQuit(PlayerQuitEvent event) {
-
-        UUID uuid = event.getPlayer().getUniqueId();
-
-        transactionCooldown.remove(uuid);
-    }
-
-    private void validateInventoryNextTick(
-            Player player,
-            String reason
+    public void onQuit(
+            PlayerQuitEvent event
     ) {
 
-        Bukkit.getScheduler().runTask(
-                this,
-                () -> validateInventory(
-                        player,
-                        reason
-                )
+        UUID uuid =
+                event.getPlayer()
+                        .getUniqueId();
+
+        transactionCooldown.remove(
+                uuid
         );
     }
 
-    private void validateInventory(
-            Player player,
+    private void notifyNearbyPlayers(
+            java.util.List<Player> players,
+            org.bukkit.block.Block block,
             String reason
     ) {
 
-        if (!player.isOnline()) {
-            return;
-        }
+        double radius = 8.0;
 
-        if (containsInvalidStack(player)) {
+        for (Player player : players) {
 
-            handleViolation(
+            if (!isProtected(player)) {
+                continue;
+            }
+
+            if (player.getLocation()
+                    .distanceSquared(
+                            block.getLocation()
+                    )
+                    > radius * radius) {
+
+                continue;
+            }
+
+            detector.begin(player);
+
+            detector.validateLater(
                     player,
-                    reason + " - invalid stack amount"
+                    reason
             );
         }
+    }
+
+    private boolean isProtectedBlock(
+            Material material
+    ) {
+
+        if (material == null) {
+            return false;
+        }
+
+        if (material.name()
+                .contains("SHULKER_BOX")) {
+
+            return getConfig().getBoolean(
+                    "piston.protect-shulker",
+                    true
+            );
+        }
+
+        return isContainerMaterial(
+                material
+        );
     }
 
     private boolean isContainerMaterial(
             Material material
     ) {
 
-        return material == Material.CHEST
-                || material == Material.TRAPPED_CHEST
-                || material == Material.ENDER_CHEST
-                || material.name().contains("SHULKER_BOX")
-                || material == Material.BARREL
-                || material == Material.HOPPER
-                || material == Material.DROPPER
-                || material == Material.DISPENSER;
-    }
+        return switch (material) {
 
-    private void notifyNearbyPlayers(
-            org.bukkit.Location location,
-            String reason
-    ) {
+            case CHEST,
+                 TRAPPED_CHEST,
+                 ENDER_CHEST,
+                 BARREL,
+                 HOPPER,
+                 DROPPER,
+                 DISPENSER,
+                 FURNACE,
+                 BLAST_FURNACE,
+                 SMOKER,
+                 CRAFTER -> true;
 
-        double radius = 8.0;
-
-        for (Player player :
-                location.getWorld().getPlayers()) {
-
-            if (player.getLocation().distanceSquared(location)
-                    > radius * radius) {
-                continue;
-            }
-
-            if (!isProtected(player)) {
-                continue;
-            }
-
-            /*
-             * Do not punish every piston/explosion.
-             *
-             * This only performs a delayed inventory invariant
-             * check for nearby protected players.
-             */
-            validateInventoryNextTick(
-                    player,
-                    reason
-            );
-        }
+            default -> false;
+        };
     }
 
     private void sendStaffAlert(
@@ -732,7 +882,8 @@ public final class BedrockAntiDupe extends JavaPlugin implements Listener {
             return;
         }
 
-        long now = System.currentTimeMillis();
+        long now =
+                System.currentTimeMillis();
 
         long cooldown =
                 getConfig().getLong(
@@ -741,7 +892,9 @@ public final class BedrockAntiDupe extends JavaPlugin implements Listener {
                 ) * 1000L;
 
         Long previous =
-                staffCooldown.get(player.getUniqueId());
+                staffCooldown.get(
+                        player.getUniqueId()
+                );
 
         if (previous != null
                 && now - previous < cooldown) {
@@ -767,25 +920,43 @@ public final class BedrockAntiDupe extends JavaPlugin implements Listener {
                 );
 
         message = message
-                .replace("%player%", player.getName())
-                .replace("%reason%", reason)
-                .replace("%violations%",
-                        String.valueOf(violation));
+                .replace(
+                        "%player%",
+                        player.getName()
+                )
+                .replace(
+                        "%reason%",
+                        reason
+                )
+                .replace(
+                        "%violations%",
+                        String.valueOf(
+                                violation
+                        )
+                );
 
-        message = ChatColor.translateAlternateColorCodes(
-                '&',
+        String prefix =
                 getConfig().getString(
                         "messages.prefix",
                         "&8[&bAntiDupe&8] "
-                ) + message
-        );
+                );
+
+        message =
+                ChatColor.translateAlternateColorCodes(
+                        '&',
+                        prefix + message
+                );
 
         for (Player staff :
                 Bukkit.getOnlinePlayers()) {
 
-            if (staff.hasPermission(permission)) {
+            if (staff.hasPermission(
+                    permission
+            )) {
 
-                staff.sendMessage(message);
+                staff.sendMessage(
+                        message
+                );
             }
         }
     }
@@ -816,11 +987,14 @@ public final class BedrockAntiDupe extends JavaPlugin implements Listener {
                         ""
                 );
 
-        if (webhook == null || webhook.isBlank()) {
+        if (webhook == null
+                || webhook.isBlank()) {
+
             return;
         }
 
-        long now = System.currentTimeMillis();
+        long now =
+                System.currentTimeMillis();
 
         long cooldown =
                 getConfig().getLong(
@@ -829,7 +1003,9 @@ public final class BedrockAntiDupe extends JavaPlugin implements Listener {
                 ) * 1000L;
 
         Long previous =
-                discordCooldown.get(player.getUniqueId());
+                discordCooldown.get(
+                        player.getUniqueId()
+                );
 
         if (previous != null
                 && now - previous < cooldown) {
@@ -850,81 +1026,130 @@ public final class BedrockAntiDupe extends JavaPlugin implements Listener {
 
         String content =
                 "**Duplication suspected**\n"
-                        + "Player: `" + player.getName() + "`\n"
-                        + "UUID: `" + player.getUniqueId() + "`\n"
-                        + "World: `" + player.getWorld().getName() + "`\n"
-                        + "Location: `"
-                        + player.getLocation().getBlockX()
-                        + ", "
-                        + player.getLocation().getBlockY()
-                        + ", "
-                        + player.getLocation().getBlockZ()
+                        + "Player: `"
+                        + player.getName()
                         + "`\n"
-                        + "Reason: `" + reason + "`\n"
-                        + "Violations: `" + violation + "`";
+                        + "Platform: `"
+                        + (
+                        isBedrockPlayer(player)
+                                ? "Bedrock"
+                                : "Java"
+                )
+                        + "`\n"
+                        + "World: `"
+                        + player.getWorld()
+                        .getName()
+                        + "`\n"
+                        + "Location: `"
+                        + player.getLocation()
+                        .getBlockX()
+                        + ", "
+                        + player.getLocation()
+                        .getBlockY()
+                        + ", "
+                        + player.getLocation()
+                        .getBlockZ()
+                        + "`\n"
+                        + "Reason: `"
+                        + reason
+                        + "`\n"
+                        + "Violations: `"
+                        + violation
+                        + "`";
 
         String json =
                 "{"
                         + "\"username\":\""
-                        + escapeJson(username)
+                        + escapeJson(
+                        username
+                )
                         + "\","
                         + "\"content\":\""
-                        + escapeJson(content)
+                        + escapeJson(
+                        content
+                )
                         + "\""
                         + "}";
 
-        Bukkit.getScheduler().runTaskAsynchronously(
-                this,
-                () -> {
+        Bukkit.getScheduler()
+                .runTaskAsynchronously(
+                        this,
+                        () -> {
 
-                    try {
+                            try {
 
-                        HttpRequest request =
-                                HttpRequest.newBuilder(
-                                                URI.create(webhook)
-                                        )
-                                        .timeout(
-                                                Duration.ofSeconds(5)
-                                        )
-                                        .header(
-                                                "Content-Type",
-                                                "application/json"
-                                        )
-                                        .POST(
-                                                HttpRequest.BodyPublishers
-                                                        .ofString(json)
-                                        )
-                                        .build();
+                                HttpRequest request =
+                                        HttpRequest
+                                                .newBuilder(
+                                                        URI.create(
+                                                                webhook
+                                                        )
+                                                )
+                                                .timeout(
+                                                        Duration.ofSeconds(
+                                                                5
+                                                        )
+                                                )
+                                                .header(
+                                                        "Content-Type",
+                                                        "application/json"
+                                                )
+                                                .POST(
+                                                        HttpRequest
+                                                                .BodyPublishers
+                                                                .ofString(
+                                                                        json
+                                                                )
+                                                )
+                                                .build();
 
-                        httpClient.send(
-                                request,
-                                HttpResponse.BodyHandlers.discarding()
-                        );
+                                httpClient.send(
+                                        request,
+                                        HttpResponse
+                                                .BodyHandlers
+                                                .discarding()
+                                );
 
-                    } catch (Exception exception) {
+                            } catch (Exception exception) {
 
-                        if (getConfig().getBoolean(
-                                "console.errors",
-                                true
-                        )) {
+                                if (getConfig()
+                                        .getBoolean(
+                                                "console.errors",
+                                                true
+                                        )) {
 
-                            getLogger().warning(
-                                    "Discord webhook failed: "
-                                            + exception.getMessage()
-                            );
+                                    getLogger().warning(
+                                            "Discord webhook failed: "
+                                                    + exception
+                                                    .getMessage()
+                                    );
+                                }
+                            }
                         }
-                    }
-                }
-        );
+                );
     }
 
-    private String escapeJson(String text) {
+    private String escapeJson(
+            String text
+    ) {
 
         return text
-                .replace("\\", "\\\\")
-                .replace("\"", "\\\"")
-                .replace("\r", " ")
-                .replace("\n", "\\n");
+                .replace(
+                        "\\",
+                        "\\\\"
+                )
+                .replace(
+                        "\"",
+                        "\\\""
+                )
+                .replace(
+                        "\r",
+                        " "
+                )
+                .replace(
+                        "\n",
+                        "\\n"
+                );
     }
 
     private void checkPunishment(
@@ -966,7 +1191,13 @@ public final class BedrockAntiDupe extends JavaPlugin implements Listener {
         );
     }
 
-    public int getViolationCount(Player player) {
+    public int getViolationCount(
+            Player player
+    ) {
+
+        if (player == null) {
+            return 0;
+        }
 
         return violations.getOrDefault(
                 player.getUniqueId(),
@@ -979,9 +1210,22 @@ public final class BedrockAntiDupe extends JavaPlugin implements Listener {
         return actionMode;
     }
 
-    public Map<UUID, Integer> getViolations() {
+    public Map<UUID, Integer>
+    getViolations() {
 
         return violations;
+    }
+
+    public TransactionLedger
+    getLedger() {
+
+        return ledger;
+    }
+
+    public DupeDetector
+    getDetector() {
+
+        return detector;
     }
 
     public static final class AntiDupeCommand
@@ -1022,7 +1266,12 @@ public final class BedrockAntiDupe extends JavaPlugin implements Listener {
                 return true;
             }
 
-            switch (args[0].toLowerCase(Locale.ROOT)) {
+            switch (
+                    args[0]
+                            .toLowerCase(
+                                    Locale.ROOT
+                            )
+            ) {
 
                 case "reload" -> {
 
@@ -1030,7 +1279,7 @@ public final class BedrockAntiDupe extends JavaPlugin implements Listener {
 
                     sender.sendMessage(
                             ChatColor.GREEN
-                                    + "BedrockAntiDupe configuration reloaded."
+                                    + "BedrockAntiDupe reloaded."
                     );
                 }
 
@@ -1039,14 +1288,29 @@ public final class BedrockAntiDupe extends JavaPlugin implements Listener {
                     sender.sendMessage(
                             ChatColor.AQUA
                                     + "BedrockAntiDupe"
-                                    + ChatColor.GRAY
-                                    + " | Mode: "
+                    );
+
+                    sender.sendMessage(
+                            ChatColor.GRAY
+                                    + "Enabled: "
+                                    + ChatColor.WHITE
+                                    + plugin.isEnabled()
+                    );
+
+                    sender.sendMessage(
+                            ChatColor.GRAY
+                                    + "Mode: "
                                     + ChatColor.WHITE
                                     + plugin.getActionMode()
-                                    + ChatColor.GRAY
-                                    + " | Violations: "
+                    );
+
+                    sender.sendMessage(
+                            ChatColor.GRAY
+                                    + "Tracked players: "
                                     + ChatColor.WHITE
-                                    + plugin.getViolations().size()
+                                    + plugin
+                                    .getViolations()
+                                    .size()
                     );
                 }
 
@@ -1080,18 +1344,48 @@ public final class BedrockAntiDupe extends JavaPlugin implements Listener {
                     sender.sendMessage(
                             ChatColor.AQUA
                                     + target.getName()
-                                    + ChatColor.GRAY
-                                    + " | Protected: "
+                    );
+
+                    sender.sendMessage(
+                            ChatColor.GRAY
+                                    + "Platform: "
                                     + ChatColor.WHITE
-                                    + plugin.isProtected(target)
-                                    + ChatColor.GRAY
-                                    + " | Bedrock: "
+                                    + (
+                                    plugin.isBedrockPlayer(
+                                            target
+                                    )
+                                            ? "Bedrock"
+                                            : "Java"
+                            )
+                    );
+
+                    sender.sendMessage(
+                            ChatColor.GRAY
+                                    + "Protected: "
                                     + ChatColor.WHITE
-                                    + plugin.isBedrockPlayer(target)
-                                    + ChatColor.GRAY
-                                    + " | Violations: "
+                                    + plugin.isProtected(
+                                    target
+                            )
+                    );
+
+                    sender.sendMessage(
+                            ChatColor.GRAY
+                                    + "Violations: "
                                     + ChatColor.WHITE
-                                    + plugin.getViolationCount(target)
+                                    + plugin
+                                    .getViolationCount(
+                                            target
+                                    )
+                    );
+
+                    sender.sendMessage(
+                            ChatColor.GRAY
+                                    + "Invalid stack: "
+                                    + ChatColor.WHITE
+                                    + plugin
+                                    .containsInvalidStack(
+                                            target
+                                    )
                     );
                 }
 
@@ -1101,7 +1395,9 @@ public final class BedrockAntiDupe extends JavaPlugin implements Listener {
                             ChatColor.AQUA
                                     + "Tracked violation players: "
                                     + ChatColor.WHITE
-                                    + plugin.getViolations().size()
+                                    + plugin
+                                    .getViolations()
+                                    .size()
                     );
                 }
 
@@ -1141,4 +1437,4 @@ public final class BedrockAntiDupe extends JavaPlugin implements Listener {
             );
         }
     }
-      }
+            }
