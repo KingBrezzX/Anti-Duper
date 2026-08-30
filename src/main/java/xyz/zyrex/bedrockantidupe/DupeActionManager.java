@@ -1,7 +1,6 @@
 package xyz.zyrex.bedrockantidupe;
 
-import org.bukkit.Bukkit;
-import org.bukkit.Material;
+import org.bukkit.Location;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
 
@@ -10,34 +9,33 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Handles the response after a transaction has been confirmed
- * as a duplication.
+ * Handles actions after a duplication event has been independently
+ * confirmed.
  *
- * The manager supports:
- * - removing confirmed duplicated items
- * - preventing repeated removal of the same transaction
- * - Discord notification
+ * Safety rule:
+ * suspicious != confirmed.
  *
- * It intentionally does not punish players based on suspicion alone.
+ * Items are only removed when the detection result is confirmed.
  */
 public final class DupeActionManager {
 
     private final BedrockAntiDupe plugin;
     private final DiscordAlertManager discord;
 
-    private final Map<String, Long> processedTransactions =
+    private final Map<UUID, Long> handledTransactions =
             new ConcurrentHashMap<>();
 
     public DupeActionManager(
             BedrockAntiDupe plugin,
             DiscordAlertManager discord
     ) {
+
         this.plugin = plugin;
         this.discord = discord;
     }
 
     /**
-     * Handles a confirmed duplication.
+     * Handles a confirmed duplication event.
      */
     public void handleConfirmedDupe(
             Player player,
@@ -45,7 +43,8 @@ public final class DupeActionManager {
             String source
     ) {
 
-        if (player == null || result == null) {
+        if (player == null
+                || result == null) {
             return;
         }
 
@@ -53,130 +52,136 @@ public final class DupeActionManager {
             return;
         }
 
-        String transactionId =
-                result.transactionId();
+        TransactionLedger.TransactionRecord transaction =
+                result.transaction();
 
-        if (transactionId == null
-                || transactionId.isBlank()) {
+        if (transaction == null) {
             return;
         }
 
+        UUID transactionId =
+                transaction.transactionId();
+
         /*
-         * Prevent the same transaction from being processed
-         * multiple times.
+         * Prevent the same confirmed transaction from being
+         * processed multiple times.
          */
-        if (processedTransactions.putIfAbsent(
+        if (handledTransactions.putIfAbsent(
                 transactionId,
                 System.currentTimeMillis()
         ) != null) {
+
             return;
         }
 
-        Material material =
-                result.material();
-
-        int amount =
-                result.amount();
-
         int removed =
-                removeItems(
+                removeConfirmedItems(
                         player,
-                        material,
-                        amount
+                        result
                 );
 
-        String action;
+        String action =
+                "CONFIRMED DUPE: removed "
+                        + removed
+                        + " item(s)";
 
-        if (removed >= amount) {
-            action =
-                    "CONFIRMED DUPE: removed "
-                            + removed
-                            + "x "
-                            + material.name();
-        } else if (removed > 0) {
-            action =
-                    "PARTIAL REMOVAL: removed "
-                            + removed
-                            + "/"
-                            + amount
-                            + "x "
-                            + material.name();
-        } else {
-            action =
-                    "NO ITEM REMOVED: suspicious quantity "
-                            + amount
-                            + "x "
-                            + material.name()
-                            + " was no longer present.";
+        if (discord != null) {
+
+            for (DupeDetector.Change change :
+                    result.changes()) {
+
+                discord.sendDupeAlert(
+                        player.getName(),
+                        player.getUniqueId()
+                                .toString(),
+                        detectPlatform(player),
+                        change.material()
+                                .name(),
+                        change.increase(),
+                        source,
+                        player.getLocation(),
+                        action
+                );
+            }
         }
 
-        /*
-         * Refresh inventory after the protection action.
-         */
-        player.updateInventory();
-
-        /*
-         * Discord notification is asynchronous.
-         */
-        discord.sendDupeAlert(
-                player.getName(),
-                player.getUniqueId().toString(),
-                detectPlatform(player),
-                material.name(),
-                removed,
-                source == null
-                        ? "UNKNOWN"
-                        : source,
-                player.getLocation(),
-                action
+        plugin.getLogger().warning(
+                "[AntiDupe] Confirmed duplication for "
+                        + player.getName()
+                        + " | transaction="
+                        + transactionId
+                        + " | removed="
+                        + removed
         );
-
-        /*
-         * Optional in-game notification.
-         */
-        if (plugin.getConfig().getBoolean(
-                "actions.notify-player",
-                false
-        )) {
-
-            player.sendMessage(
-                    color(
-                            plugin.getConfig().getString(
-                                    "messages.dupe-detected",
-                                    "&c[AntiDupe] Suspicious duplicated item removed."
-                            )
-                    )
-            );
-        }
     }
 
     /**
-     * Removes only the confirmed suspicious amount.
+     * Removes only the amount that was identified by the
+     * confirmed detector.
      *
-     * It does not clear the player's whole inventory.
+     * It does not wipe the player's whole inventory.
      */
-    public int removeItems(
+    private int removeConfirmedItems(
             Player player,
-            Material material,
-            int amount
+            DupeDetector.DetectionResult result
     ) {
 
-        if (player == null
-                || material == null
-                || amount <= 0) {
+        if (!plugin.getConfig().getBoolean(
+                "actions.remove-confirmed-items",
+                true
+        )) {
+
             return 0;
         }
 
-        int remaining = amount;
-        int removed = 0;
+        int totalRemoved = 0;
+
+        for (DupeDetector.Change change :
+                result.changes()) {
+
+            int amount =
+                    Math.max(
+                            0,
+                            change.increase()
+                    );
+
+            if (amount <= 0) {
+                continue;
+            }
+
+            totalRemoved +=
+                    removeMaterial(
+                            player,
+                            change.material(),
+                            amount
+                    );
+        }
+
+        return totalRemoved;
+    }
+
+    /**
+     * Removes a specific material from the player's inventory.
+     *
+     * This is deliberately limited to the confirmed increase,
+     * rather than clearing every copy owned by the player.
+     */
+    private int removeMaterial(
+            Player player,
+            org.bukkit.Material material,
+            int amount
+    ) {
+
+        int remaining =
+                amount;
 
         ItemStack[] contents =
                 player.getInventory()
                         .getContents();
 
         for (int slot = 0;
-                slot < contents.length;
-                slot++) {
+             slot < contents.length;
+             slot++) {
 
             if (remaining <= 0) {
                 break;
@@ -186,20 +191,25 @@ public final class DupeActionManager {
                     contents[slot];
 
             if (item == null
-                    || item.getType() != material) {
+                    || item.getType().isAir()) {
                 continue;
             }
 
-            int stackAmount =
-                    item.getAmount();
+            if (item.getType() != material) {
+                continue;
+            }
 
-            int take =
+            int remove =
                     Math.min(
-                            stackAmount,
-                            remaining
+                            remaining,
+                            item.getAmount()
                     );
 
-            if (take >= stackAmount) {
+            int newAmount =
+                    item.getAmount()
+                            - remove;
+
+            if (newAmount <= 0) {
 
                 player.getInventory()
                         .setItem(
@@ -210,7 +220,7 @@ public final class DupeActionManager {
             } else {
 
                 item.setAmount(
-                        stackAmount - take
+                        newAmount
                 );
 
                 player.getInventory()
@@ -220,90 +230,96 @@ public final class DupeActionManager {
                         );
             }
 
-            remaining -= take;
-            removed += take;
+            remaining -= remove;
         }
 
         /*
-         * Also inspect offhand.
+         * Return the amount actually removed.
          */
-        if (remaining > 0) {
+        return amount - remaining;
+    }
 
-            ItemStack offhand =
-                    player.getInventory()
-                            .getItemInOffHand();
+    /**
+     * Basic platform detection.
+     *
+     * Floodgate is checked through its Bukkit plugin presence.
+     * If Floodgate is unavailable, the player is treated as Java.
+     */
+    private String detectPlatform(
+            Player player
+    ) {
 
-            if (offhand != null
-                    && offhand.getType() == material) {
+        if (player == null) {
+            return "UNKNOWN";
+        }
 
-                int stackAmount =
-                        offhand.getAmount();
+        if (plugin.getServer()
+                .getPluginManager()
+                .getPlugin("floodgate") != null) {
 
-                int take =
-                        Math.min(
-                                stackAmount,
-                                remaining
+            try {
+
+                Class<?> apiClass =
+                        Class.forName(
+                                "org.geysermc.floodgate.api.FloodgateApi"
                         );
 
-                if (take >= stackAmount) {
+                Object api =
+                        apiClass
+                                .getMethod(
+                                        "getInstance"
+                                )
+                                .invoke(null);
 
-                    player.getInventory()
-                            .setItemInOffHand(
-                                    null
-                            );
+                Object bedrock =
+                        apiClass
+                                .getMethod(
+                                        "isFloodgatePlayer",
+                                        UUID.class
+                                )
+                                .invoke(
+                                        api,
+                                        player.getUniqueId()
+                                );
 
-                } else {
+                if (bedrock instanceof Boolean
+                        && (Boolean) bedrock) {
 
-                    offhand.setAmount(
-                            stackAmount - take
-                    );
-
-                    player.getInventory()
-                            .setItemInOffHand(
-                                    offhand
-                            );
+                    return "BEDROCK";
                 }
 
-                remaining -= take;
-                removed += take;
+            } catch (
+                    ReflectiveOperationException
+                            | LinkageError ignored
+            ) {
+
+                /*
+                 * Floodgate API is optional.
+                 * Do not fail the anti-dupe plugin if the API
+                 * changes or is unavailable.
+                 */
             }
         }
 
-        return removed;
+        return "JAVA";
     }
 
     /**
-     * Removes a specific quantity from a player.
+     * Returns whether a transaction was already handled.
      */
-    public int removeItems(
-            UUID playerId,
-            Material material,
-            int amount
+    public boolean isHandled(
+            UUID transactionId
     ) {
 
-        if (playerId == null) {
-            return 0;
-        }
-
-        Player player =
-                Bukkit.getPlayer(
-                        playerId
+        return transactionId != null
+                && handledTransactions
+                .containsKey(
+                        transactionId
                 );
-
-        if (player == null
-                || !player.isOnline()) {
-            return 0;
-        }
-
-        return removeItems(
-                player,
-                material,
-                amount
-        );
     }
 
     /**
-     * Prevents old transaction IDs from growing forever.
+     * Removes old transaction IDs from memory.
      */
     public void cleanup(
             long maxAgeMillis
@@ -312,8 +328,7 @@ public final class DupeActionManager {
         long now =
                 System.currentTimeMillis();
 
-        processedTransactions
-                .entrySet()
+        handledTransactions.entrySet()
                 .removeIf(
                         entry ->
                                 now - entry.getValue()
@@ -321,43 +336,8 @@ public final class DupeActionManager {
                 );
     }
 
-    /**
-     * Clears processed transaction state.
-     */
     public void clear() {
 
-        processedTransactions.clear();
+        handledTransactions.clear();
     }
-
-    private String detectPlatform(
-            Player player
-    ) {
-
-        /*
-         * The plugin is currently built for the Bedrock/Geyser
-         * environment. If Floodgate is installed, a more precise
-         * platform check can be connected later.
-         */
-        if (Bukkit.getPluginManager()
-                .getPlugin("Floodgate") != null) {
-
-            return "Bedrock/Geyser";
-        }
-
-        return "Java";
     }
-
-    private String color(
-            String message
-    ) {
-
-        if (message == null) {
-            return "";
-        }
-
-        return message.replace(
-                "&",
-                "§"
-        );
-    }
-              }
