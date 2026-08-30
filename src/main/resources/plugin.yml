@@ -1,27 +1,31 @@
 name: BedrockAntiDupe
 version: 1.0.0
 main: xyz.zyrex.bedrockantidupe.BedrockAntiDupe
-api-version: '1.21'
+api-version: '26.2'
+
+description: Advanced event-driven anti-duplication protection for Paper servers.
 author: ZyrexSMP
-description: Advanced anti-dupe protection for Java and Bedrock players
 
 softdepend:
   - floodgate
   - Geyser-Spigot
   - Vault
+  - PlaceholderAPI
 
 commands:
   antidupe:
     description: BedrockAntiDupe administration command
     usage: /antidupe <reload|status|check|violations>
     aliases:
-      - adupe
+      - badupe
+      - dupeguard
 
 permissions:
+
   bedrockantidupe.admin:
-    description: Access to BedrockAntiDupe administration
+    description: Allows administration of BedrockAntiDupe
     default: op
 
   bedrockantidupe.alert:
-    description: Receive anti-dupe alerts
+    description: Receive BedrockAntiDupe staff alerts
     default: op
