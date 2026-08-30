@@ -1,0 +1,27 @@
+name: BedrockAntiDupe
+version: 1.0.0
+main: xyz.zyrex.bedrockantidupe.BedrockAntiDupe
+api-version: '1.21'
+author: ZyrexSMP
+description: Advanced anti-dupe protection for Java and Bedrock players
+
+softdepend:
+  - floodgate
+  - Geyser-Spigot
+  - Vault
+
+commands:
+  antidupe:
+    description: BedrockAntiDupe administration command
+    usage: /antidupe <reload|status|check|violations>
+    aliases:
+      - adupe
+
+permissions:
+  bedrockantidupe.admin:
+    description: Access to BedrockAntiDupe administration
+    default: op
+
+  bedrockantidupe.alert:
+    description: Receive anti-dupe alerts
+    default: op
