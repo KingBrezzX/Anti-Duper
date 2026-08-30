@@ -1,73 +1,53 @@
 package xyz.zyrex.bedrockantidupe;
 
-import org.bukkit.Location;
-import org.bukkit.Material;
-import org.bukkit.inventory.ItemStack;
-import org.bukkit.inventory.PlayerInventory;
 import org.bukkit.entity.Player;
+import org.bukkit.inventory.ItemStack;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
-/**
- * Central transaction ledger for the anti-dupe system.
- *
- * The ledger keeps short-lived transaction snapshots and
- * provenance information so suspicious inventory changes
- * can be correlated with later shop/economy transactions.
- *
- * It deliberately does NOT assume that every inventory change
- * is a dupe. Detection must be performed by DupeDetector.
- */
 public final class TransactionLedger {
 
     private final BedrockAntiDupe plugin;
 
-    private final Map<UUID, TransactionSnapshot> activeSnapshots =
+    private final Map<UUID, TransactionSnapshot> active =
             new ConcurrentHashMap<>();
 
-    private final Map<String, TransactionRecord> transactions =
+    private final Map<UUID, TransactionRecord> history =
             new ConcurrentHashMap<>();
 
-    private final Map<String, ItemProvenance> provenance =
-            new ConcurrentHashMap<>();
-
-    public TransactionLedger(
-            BedrockAntiDupe plugin
-    ) {
-
+    public TransactionLedger(BedrockAntiDupe plugin) {
         this.plugin = plugin;
     }
 
     /**
-     * Starts tracking an inventory transaction.
+     * Takes the BEFORE snapshot.
      */
     public TransactionSnapshot begin(
             Player player,
             String source
     ) {
 
-        if (player == null) {
-            throw new IllegalArgumentException(
-                    "player cannot be null"
-            );
-        }
+        Objects.requireNonNull(player, "player");
 
-        String transactionId =
-                UUID.randomUUID().toString();
+        UUID transactionId =
+                UUID.randomUUID();
+
+        Map<Integer, ItemStack> contents =
+                snapshotInventory(player);
 
         TransactionSnapshot snapshot =
-                createSnapshot(
-                        player,
+                new TransactionSnapshot(
                         transactionId,
-                        source
+                        player.getUniqueId(),
+                        source == null
+                                ? "UNKNOWN"
+                                : source,
+                        contents,
+                        System.currentTimeMillis()
                 );
 
-        activeSnapshots.put(
+        active.put(
                 player.getUniqueId(),
                 snapshot
         );
@@ -76,7 +56,7 @@ public final class TransactionLedger {
     }
 
     /**
-     * Finishes the currently active transaction.
+     * Takes the AFTER snapshot and creates a record.
      */
     public TransactionRecord finish(
             Player player
@@ -87,7 +67,7 @@ public final class TransactionLedger {
         }
 
         TransactionSnapshot before =
-                activeSnapshots.remove(
+                active.remove(
                         player.getUniqueId()
                 );
 
@@ -95,292 +75,50 @@ public final class TransactionLedger {
             return null;
         }
 
-        InventorySnapshot after =
-                captureInventory(
-                        player
-                );
+        Map<Integer, ItemStack> after =
+                snapshotInventory(player);
 
         TransactionRecord record =
-                new TransactionRecord(
-                        before.transactionId(),
-                        player.getUniqueId(),
-                        before.source(),
-                        before.inventory(),
-                        after,
-                        System.currentTimeMillis()
+                TransactionRecord.from(
+                        before,
+                        after
                 );
 
-        transactions.put(
-                before.transactionId(),
+        history.put(
+                record.transactionId(),
                 record
         );
 
         return record;
     }
 
-    /**
-     * Cancels a transaction without registering an after-state.
-     */
-    public void cancel(
-            Player player
-    ) {
-
-        if (player == null) {
-            return;
-        }
-
-        activeSnapshots.remove(
-                player.getUniqueId()
-        );
-    }
-
-    /**
-     * Registers item provenance.
-     */
-    public void registerProvenance(
-            ItemProvenance itemProvenance
-    ) {
-
-        if (itemProvenance == null) {
-            return;
-        }
-
-        provenance.put(
-                itemProvenance.provenanceId()
-                        .toString(),
-                itemProvenance
-        );
-    }
-
-    /**
-     * Gets provenance by ID.
-     */
-    public ItemProvenance getProvenance(
-            String provenanceId
-    ) {
-
-        if (provenanceId == null) {
-            return null;
-        }
-
-        return provenance.get(
-                provenanceId
-        );
-    }
-
-    /**
-     * Gets a transaction by ID.
-     */
-    public TransactionRecord getTransaction(
-            String transactionId
-    ) {
-
-        if (transactionId == null) {
-            return null;
-        }
-
-        return transactions.get(
-                transactionId
-        );
-    }
-
-    /**
-     * Returns an immutable view of registered transactions.
-     */
-    public Map<String, TransactionRecord>
-    getTransactions() {
-
-        return Collections.unmodifiableMap(
-                transactions
-        );
-    }
-
-    /**
-     * Returns the active transaction for a player.
-     */
-    public TransactionSnapshot getActiveSnapshot(
+    public TransactionSnapshot getActive(
             UUID playerId
     ) {
 
-        if (playerId == null) {
-            return null;
-        }
-
-        return activeSnapshots.get(
+        return active.get(
                 playerId
         );
     }
 
-    /**
-     * Creates an inventory snapshot.
-     */
-    private TransactionSnapshot createSnapshot(
-            Player player,
-            String transactionId,
-            String source
+    public TransactionRecord get(
+            UUID transactionId
     ) {
 
-        return new TransactionSnapshot(
-                transactionId,
-                player.getUniqueId(),
-                source == null
-                        ? "UNKNOWN"
-                        : source,
-                captureInventory(player),
-                System.currentTimeMillis()
+        return history.get(
+                transactionId
+        );
+    }
+
+    public Collection<TransactionRecord> getHistory() {
+
+        return Collections.unmodifiableCollection(
+                history.values()
         );
     }
 
     /**
-     * Captures the player's complete inventory state.
-     *
-     * This includes:
-     * - main inventory
-     * - armor
-     * - offhand
-     *
-     * ItemStack objects are cloned so later modifications
-     * do not mutate the stored snapshot.
-     */
-    public InventorySnapshot captureInventory(
-            Player player
-    ) {
-
-        PlayerInventory inventory =
-                player.getInventory();
-
-        List<ItemStack> contents =
-                cloneContents(
-                        inventory.getStorageContents()
-                );
-
-        List<ItemStack> armor =
-                cloneContents(
-                        inventory.getArmorContents()
-                );
-
-        ItemStack offhand =
-                inventory.getItemInOffHand();
-
-        if (offhand != null) {
-            offhand = offhand.clone();
-        }
-
-        return new InventorySnapshot(
-                contents,
-                armor,
-                offhand
-        );
-    }
-
-    private List<ItemStack> cloneContents(
-            ItemStack[] source
-    ) {
-
-        List<ItemStack> result =
-                new ArrayList<>(
-                        source.length
-                );
-
-        for (ItemStack item : source) {
-
-            result.add(
-                    item == null
-                            ? null
-                            : item.clone()
-            );
-        }
-
-        return result;
-    }
-
-    /**
-     * Calculates the total number of a material
-     * in an inventory snapshot.
-     */
-    public int countMaterial(
-            InventorySnapshot snapshot,
-            Material material
-    ) {
-
-        if (snapshot == null
-                || material == null) {
-
-            return 0;
-        }
-
-        int total = 0;
-
-        for (ItemStack item :
-                snapshot.contents()) {
-
-            if (item != null
-                    && item.getType() == material) {
-
-                total += item.getAmount();
-            }
-        }
-
-        for (ItemStack item :
-                snapshot.armor()) {
-
-            if (item != null
-                    && item.getType() == material) {
-
-                total += item.getAmount();
-            }
-        }
-
-        ItemStack offhand =
-                snapshot.offhand();
-
-        if (offhand != null
-                && offhand.getType() == material) {
-
-            total += offhand.getAmount();
-        }
-
-        return total;
-    }
-
-    /**
-     * Calculates the difference in quantity of one material
-     * between two snapshots.
-     *
-     * Positive = increased.
-     * Negative = decreased.
-     */
-    public int materialDelta(
-            InventorySnapshot before,
-            InventorySnapshot after,
-            Material material
-    ) {
-
-        return countMaterial(
-                after,
-                material
-        ) - countMaterial(
-                before,
-                material
-        );
-    }
-
-    /**
-     * Returns all registered provenance records.
-     */
-    public List<ItemProvenance>
-    getProvenanceRecords() {
-
-        return List.copyOf(
-                provenance.values()
-        );
-    }
-
-    /**
-     * Removes old records from memory.
-     *
-     * This should be called periodically to prevent
-     * unlimited memory growth.
+     * Removes stale transactions.
      */
     public void cleanup(
             long maxAgeMillis
@@ -389,195 +127,292 @@ public final class TransactionLedger {
         long now =
                 System.currentTimeMillis();
 
-        transactions.entrySet()
+        active.entrySet()
                 .removeIf(
-                        entry -> now
-                                - entry.getValue()
-                                .timestamp()
-                                > maxAgeMillis
+                        entry ->
+                                now
+                                        - entry.getValue()
+                                        .timestamp()
+                                        > maxAgeMillis
                 );
 
-        provenance.entrySet()
+        history.entrySet()
                 .removeIf(
-                        entry -> now
-                                - entry.getValue()
-                                .timestamp()
-                                > maxAgeMillis
+                        entry ->
+                                now
+                                        - entry.getValue()
+                                        .timestamp()
+                                        > maxAgeMillis
                 );
     }
 
-    /**
-     * Clears all in-memory transaction information.
-     */
     public void clear() {
 
-        activeSnapshots.clear();
-        transactions.clear();
-        provenance.clear();
+        active.clear();
+        history.clear();
     }
 
-    /**
-     * Immutable transaction-start snapshot.
-     */
+    private Map<Integer, ItemStack> snapshotInventory(
+            Player player
+    ) {
+
+        Map<Integer, ItemStack> snapshot =
+                new HashMap<>();
+
+        ItemStack[] contents =
+                player.getInventory()
+                        .getContents();
+
+        for (int slot = 0;
+             slot < contents.length;
+             slot++) {
+
+            ItemStack item =
+                    contents[slot];
+
+            if (item == null
+                    || item.getType().isAir()) {
+
+                continue;
+            }
+
+            snapshot.put(
+                    slot,
+                    item.clone()
+            );
+        }
+
+        return snapshot;
+    }
+
     public record TransactionSnapshot(
 
-            String transactionId,
+            UUID transactionId,
 
             UUID playerId,
 
             String source,
 
-            InventorySnapshot inventory,
+            Map<Integer, ItemStack> contents,
 
             long timestamp
 
     ) {
+
+        public TransactionSnapshot {
+
+            contents =
+                    Collections.unmodifiableMap(
+                            new HashMap<>(
+                                    contents
+                            )
+                    );
+        }
     }
 
-    /**
-     * Immutable inventory state.
-     */
-    public record InventorySnapshot(
+    public record TransactionRecord(
 
-            List<ItemStack> contents,
+            UUID transactionId,
 
-            List<ItemStack> armor,
+            UUID playerId,
 
-            ItemStack offhand
+            String source,
+
+            Map<Integer, ItemStack> before,
+
+            Map<Integer, ItemStack> after,
+
+            List<ItemChange> changes,
+
+            long timestamp
 
     ) {
 
-        public InventorySnapshot {
+        public TransactionRecord {
 
-            contents =
-                    contents == null
-                            ? List.of()
-                            : copy(contents);
-
-            armor =
-                    armor == null
-                            ? List.of()
-                            : copy(armor);
-
-            if (offhand != null) {
-                offhand =
-                        offhand.clone();
-            }
-        }
-
-        private static List<ItemStack> copy(
-                List<ItemStack> source
-        ) {
-
-            List<ItemStack> result =
-                    new ArrayList<>(
-                            source.size()
+            before =
+                    Collections.unmodifiableMap(
+                            new HashMap<>(before)
                     );
 
-            for (ItemStack item : source) {
+            after =
+                    Collections.unmodifiableMap(
+                            new HashMap<>(after)
+                    );
 
-                result.add(
-                        item == null
-                                ? null
-                                : item.clone()
+            changes =
+                    List.copyOf(changes);
+        }
+
+        public static TransactionRecord from(
+                TransactionSnapshot snapshot,
+                Map<Integer, ItemStack> after
+        ) {
+
+            List<ItemChange> changes =
+                    new ArrayList<>();
+
+            Set<Integer> slots =
+                    new HashSet<>();
+
+            slots.addAll(
+                    snapshot.contents().keySet()
+            );
+
+            slots.addAll(
+                    after.keySet()
+            );
+
+            for (Integer slot : slots) {
+
+                ItemStack oldItem =
+                        snapshot.contents()
+                                .get(slot);
+
+                ItemStack newItem =
+                        after.get(slot);
+
+                if (sameItem(
+                        oldItem,
+                        newItem
+                )) {
+                    continue;
+                }
+
+                changes.add(
+                        new ItemChange(
+                                slot,
+                                oldItem == null
+                                        ? null
+                                        : oldItem.clone(),
+                                newItem == null
+                                        ? null
+                                        : newItem.clone()
+                        )
                 );
             }
 
-            return List.copyOf(
-                    result
-            );
-        }
-    }
-
-    /**
-     * Complete before/after transaction record.
-     */
-    public record TransactionRecord(
-
-            String transactionId,
-
-            UUID playerId,
-
-            String source,
-
-            InventorySnapshot before,
-
-            InventorySnapshot after,
-
-            long timestamp
-
-    ) {
-
-        /**
-         * Returns whether the inventory changed.
-         */
-        public boolean changed() {
-
-            return !before.equals(
-                    after
+            return new TransactionRecord(
+                    snapshot.transactionId(),
+                    snapshot.playerId(),
+                    snapshot.source(),
+                    snapshot.contents(),
+                    after,
+                    changes,
+                    System.currentTimeMillis()
             );
         }
 
         /**
-         * Returns the change in quantity of a material.
+         * Returns the total positive item increase.
          */
-        public int materialDelta(
-                Material material
-        ) {
-
-            int beforeAmount =
-                    count(
-                            before,
-                            material
-                    );
-
-            int afterAmount =
-                    count(
-                            after,
-                            material
-                    );
-
-            return afterAmount
-                    - beforeAmount;
-        }
-
-        private static int count(
-                InventorySnapshot snapshot,
-                Material material
-        ) {
+        public int totalPositiveIncrease() {
 
             int total = 0;
 
-            for (ItemStack item :
-                    snapshot.contents()) {
+            for (ItemChange change :
+                    changes) {
 
-                if (item != null
-                        && item.getType() == material) {
+                int beforeAmount =
+                        amount(change.before());
 
-                    total += item.getAmount();
+                int afterAmount =
+                        amount(change.after());
+
+                if (afterAmount > beforeAmount) {
+
+                    total +=
+                            afterAmount
+                                    - beforeAmount;
                 }
-            }
-
-            for (ItemStack item :
-                    snapshot.armor()) {
-
-                if (item != null
-                        && item.getType() == material) {
-
-                    total += item.getAmount();
-                }
-            }
-
-            ItemStack offhand =
-                    snapshot.offhand();
-
-            if (offhand != null
-                    && offhand.getType() == material) {
-
-                total += offhand.getAmount();
             }
 
             return total;
         }
+
+        /**
+         * Returns whether the transaction contains
+         * any positive inventory increase.
+         */
+        public boolean hasPositiveIncrease() {
+
+            return totalPositiveIncrease() > 0;
+        }
+
+        /**
+         * Returns all changed slots.
+         */
+        public List<ItemChange> getChanges() {
+
+            return changes;
+        }
+
+        private static int amount(
+                ItemStack item
+        ) {
+
+            return item == null
+                    ? 0
+                    : item.getAmount();
+        }
+
+        private static boolean sameItem(
+                ItemStack a,
+                ItemStack b
+        ) {
+
+            if (a == null && b == null) {
+                return true;
+            }
+
+            if (a == null || b == null) {
+                return false;
+            }
+
+            return a.isSimilar(b)
+                    && a.getAmount()
+                    == b.getAmount();
+        }
     }
+
+    public record ItemChange(
+
+            int slot,
+
+            ItemStack before,
+
+            ItemStack after
+
+    ) {
+
+        public int amountBefore() {
+
+            return before == null
+                    ? 0
+                    : before.getAmount();
+        }
+
+        public int amountAfter() {
+
+            return after == null
+                    ? 0
+                    : after.getAmount();
+        }
+
+        public int amountDelta() {
+
+            return amountAfter()
+                    - amountBefore();
+        }
+
+        public boolean increased() {
+
+            return amountDelta() > 0;
+        }
+
+        public boolean decreased() {
+
+            return amountDelta() < 0;
+        }
     }
+                }
