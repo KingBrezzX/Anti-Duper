@@ -49,7 +49,6 @@ public final class EvidenceManager {
             String reason,
             Map<Material, Integer> increases
     ) {
-
         if (player == null) {
             return;
         }
@@ -78,7 +77,6 @@ public final class EvidenceManager {
 
         if (previous != null
                 && now - previous < cooldown) {
-
             return;
         }
 
@@ -108,12 +106,10 @@ public final class EvidenceManager {
             String reason,
             Map<Material, Integer> increases
     ) {
-
         StringBuilder items =
                 new StringBuilder();
 
         if (increases != null) {
-
             for (Map.Entry<Material, Integer> entry :
                     increases.entrySet()) {
 
@@ -145,26 +141,16 @@ public final class EvidenceManager {
                         + "UUID: "
                         + player.getUniqueId()
                         + "\n"
-                        + "Platform: "
-                        + (
-                        plugin.isBedrockPlayer(player)
-                                ? "Bedrock"
-                                : "Java"
-                )
-                        + "\n"
+                        + "Platform: Java\n"
                         + "World: "
-                        + player.getWorld()
-                        .getName()
+                        + player.getWorld().getName()
                         + "\n"
                         + "Location: "
-                        + player.getLocation()
-                        .getBlockX()
+                        + player.getLocation().getBlockX()
                         + ", "
-                        + player.getLocation()
-                        .getBlockY()
+                        + player.getLocation().getBlockY()
                         + ", "
-                        + player.getLocation()
-                        .getBlockZ()
+                        + player.getLocation().getBlockZ()
                         + "\n"
                         + "Reason: "
                         + sanitize(reason)
@@ -182,15 +168,12 @@ public final class EvidenceManager {
             UUID uuid,
             String evidence
     ) {
-
         plugin.getServer()
                 .getScheduler()
                 .runTaskAsynchronously(
                         plugin,
                         () -> {
-
                             try {
-
                                 File directory =
                                         new File(
                                                 plugin.getDataFolder(),
@@ -200,10 +183,16 @@ public final class EvidenceManager {
                                 if (!directory.exists()
                                         && !directory.mkdirs()) {
 
-                                    plugin.getLogger()
-                                            .warning(
-                                                    "Could not create evidence directory."
-                                            );
+                                    if (plugin.getConfig()
+                                            .getBoolean(
+                                                    "console.errors",
+                                                    true
+                                            )) {
+                                        plugin.getLogger()
+                                                .warning(
+                                                        "Could not create evidence directory."
+                                                );
+                                    }
 
                                     return;
                                 }
@@ -234,8 +223,7 @@ public final class EvidenceManager {
                                     plugin.getLogger()
                                             .warning(
                                                     "Failed to write dupe evidence: "
-                                                            + exception
-                                                            .getMessage()
+                                                            + exception.getMessage()
                                             );
                                 }
                             }
@@ -249,7 +237,6 @@ public final class EvidenceManager {
     public void delete(
             UUID uuid
     ) {
-
         if (uuid == null) {
             return;
         }
@@ -276,7 +263,6 @@ public final class EvidenceManager {
                             }
 
                             try {
-
                                 Files.deleteIfExists(
                                         file.toPath()
                                 );
@@ -292,8 +278,7 @@ public final class EvidenceManager {
                                     plugin.getLogger()
                                             .warning(
                                                     "Failed to delete evidence: "
-                                                            + exception
-                                                            .getMessage()
+                                                            + exception.getMessage()
                                             );
                                 }
                             }
@@ -305,14 +290,12 @@ public final class EvidenceManager {
      * Clear runtime cooldowns.
      */
     public void clear() {
-
         lastWrite.clear();
     }
 
     private String sanitize(
             String value
     ) {
-
         if (value == null) {
             return "unknown";
         }
@@ -321,4 +304,4 @@ public final class EvidenceManager {
                 .replace('\n', ' ')
                 .replace('\r', ' ');
     }
-}
+    }
