@@ -5,29 +5,26 @@ on:
     branches:
       - main
       - master
-
   pull_request:
-
+    branches:
+      - main
+      - master
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
-
   build:
-
     name: Build with Java 25
-
     runs-on: ubuntu-latest
 
-    permissions:
-      contents: read
-
     steps:
-
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Setup Java 25
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '25'
@@ -36,34 +33,32 @@ jobs:
       - name: Show Java version
         run: java -version
 
-      - name: Validate Maven project
-        run: mvn -B validate
-
-      - name: Compile
-        run: mvn -B clean compile
-
-      - name: Package
-        run: mvn -B package
+      - name: Build with Maven
+        run: mvn -B clean package
 
       - name: Verify JAR
         shell: bash
         run: |
           set -e
 
-          JAR="target/BedrockAntiDupe-1.0.0.jar"
+          echo "Checking target directory..."
+          ls -lah target || true
 
-          if [ ! -f "$JAR" ]; then
-            echo "ERROR: JAR was not generated."
+          JAR="$(find target -maxdepth 1 -type f -name '*.jar' ! -name 'original-*.jar' | head -n 1)"
+
+          if [ -z "$JAR" ]; then
+            echo "ERROR: No JAR was generated."
             exit 1
           fi
 
-          echo "Build successful:"
-          ls -lh "$JAR"
+          echo "JAR generated successfully:"
+          echo "$JAR"
 
-      - name: Upload JAR
+          test -f "$JAR"
+
+      - name: Upload plugin JAR
         uses: actions/upload-artifact@v4
         with:
-          name: BedrockAntiDupe
-          path: target/BedrockAntiDupe-1.0.0.jar
+          name: BedrockAntiDupe-2.0.0
+          path: target/*.jar
           if-no-files-found: error
-          retention-days: 30
