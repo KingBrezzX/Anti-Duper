@@ -48,6 +48,7 @@ public final class BedrockAntiDupe extends JavaPlugin
 
     private TransactionLedger ledger;
     private DupeDetector detector;
+    private EvidenceManager evidenceManager;
 
     private String actionMode;
 
@@ -60,18 +61,20 @@ public final class BedrockAntiDupe extends JavaPlugin
 
         loadSettings();
 
+        httpClient = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofSeconds(5))
+                .build();
+
         ledger = new TransactionLedger();
 
-        detector = new DupeDetector(
-                this,
-                ledger
-        );
+        evidenceManager =
+                new EvidenceManager(this);
 
-        httpClient = HttpClient.newBuilder()
-                .connectTimeout(
-                        Duration.ofSeconds(5)
-                )
-                .build();
+        detector =
+                new DupeDetector(
+                        this,
+                        ledger
+                );
 
         Bukkit.getPluginManager()
                 .registerEvents(this, this);
@@ -79,6 +82,24 @@ public final class BedrockAntiDupe extends JavaPlugin
         Bukkit.getPluginManager()
                 .registerEvents(
                         new ProtectionListener(
+                                this,
+                                detector
+                        ),
+                        this
+                );
+
+        Bukkit.getPluginManager()
+                .registerEvents(
+                        new ContainerProtectionListener(
+                                this,
+                                detector
+                        ),
+                        this
+                );
+
+        Bukkit.getPluginManager()
+                .registerEvents(
+                        new ShopTransactionListener(
                                 this,
                                 detector
                         ),
@@ -98,7 +119,7 @@ public final class BedrockAntiDupe extends JavaPlugin
         );
 
         getLogger().info(
-                "Paper 26.2 | Java 25"
+                "Target: Paper 26.2 | Java 25"
         );
 
         getLogger().info(
@@ -114,6 +135,10 @@ public final class BedrockAntiDupe extends JavaPlugin
             detector.clear();
         }
 
+        if (evidenceManager != null) {
+            evidenceManager.clear();
+        }
+
         violations.clear();
         transactionCooldown.clear();
         staffCooldown.clear();
@@ -126,26 +151,21 @@ public final class BedrockAntiDupe extends JavaPlugin
 
     public void loadSettings() {
 
-        actionMode = getConfig()
-                .getString(
-                        "action.mode",
-                        "REMOVE_AND_ALERT"
-                )
-                .toUpperCase(
-                        Locale.ROOT
-                );
+        actionMode =
+                getConfig()
+                        .getString(
+                                "action.mode",
+                                "REMOVE_AND_ALERT"
+                        )
+                        .toUpperCase(
+                                Locale.ROOT
+                        );
     }
 
     public void reloadPlugin() {
 
         reloadConfig();
         loadSettings();
-
-        /*
-         * Discord/notification cooldown state is intentionally
-         * preserved during reload so /antidupe reload cannot
-         * accidentally create a notification burst.
-         */
     }
 
     public boolean isEnabled() {
@@ -163,14 +183,10 @@ public final class BedrockAntiDupe extends JavaPlugin
 
         if (player == null
                 || !isEnabled()) {
-
             return false;
         }
 
-        boolean bedrock =
-                isBedrockPlayer(player);
-
-        if (bedrock) {
+        if (isBedrockPlayer(player)) {
 
             return getConfig()
                     .getBoolean(
@@ -186,12 +202,6 @@ public final class BedrockAntiDupe extends JavaPlugin
                 );
     }
 
-    /**
-     * Floodgate detection through reflection.
-     *
-     * This keeps the plugin loadable even if Floodgate
-     * is temporarily unavailable.
-     */
     public boolean isBedrockPlayer(
             Player player
     ) {
@@ -248,7 +258,7 @@ public final class BedrockAntiDupe extends JavaPlugin
         long cooldown =
                 getConfig().getLong(
                         "settings.transaction-cooldown-ms",
-                        150
+                        150L
                 );
 
         Long previous =
@@ -261,16 +271,12 @@ public final class BedrockAntiDupe extends JavaPlugin
                 && now - previous < cooldown;
     }
 
-    /**
-     * Protected item detection.
-     */
     public boolean isProtectedItem(
             ItemStack item
     ) {
 
         if (item == null
                 || item.getType().isAir()) {
-
             return false;
         }
 
@@ -302,7 +308,9 @@ public final class BedrockAntiDupe extends JavaPlugin
         }
 
         if (material ==
-                Material.CHEST) {
+                Material.CHEST
+                || material ==
+                Material.TRAPPED_CHEST) {
 
             return getConfig()
                     .getBoolean(
@@ -311,22 +319,9 @@ public final class BedrockAntiDupe extends JavaPlugin
                     );
         }
 
-        if (material ==
-                Material.TRAPPED_CHEST) {
-
-            return getConfig()
-                    .getBoolean(
-                            "containers.trapped-chest",
-                            true
-                    );
-        }
-
         return false;
     }
 
-    /**
-     * Detect impossible stack amounts.
-     */
     public boolean containsInvalidStack(
             Player player
     ) {
@@ -341,7 +336,6 @@ public final class BedrockAntiDupe extends JavaPlugin
 
             if (item == null
                     || item.getType().isAir()) {
-
                 continue;
             }
 
@@ -355,11 +349,6 @@ public final class BedrockAntiDupe extends JavaPlugin
         return false;
     }
 
-    /**
-     * Removes only physically impossible stack sizes.
-     *
-     * It does NOT blindly delete normal shulkers/chests.
-     */
     public void removeInvalidStacks(
             Player player
     ) {
@@ -383,7 +372,6 @@ public final class BedrockAntiDupe extends JavaPlugin
 
             if (item == null
                     || item.getType().isAir()) {
-
                 continue;
             }
 
@@ -411,9 +399,6 @@ public final class BedrockAntiDupe extends JavaPlugin
         }
     }
 
-    /**
-     * Central violation handler.
-     */
     public void handleViolation(
             Player player,
             String reason
@@ -421,7 +406,6 @@ public final class BedrockAntiDupe extends JavaPlugin
 
         if (player == null
                 || !player.isOnline()) {
-
             return;
         }
 
@@ -435,6 +419,15 @@ public final class BedrockAntiDupe extends JavaPlugin
                         1,
                         Integer::sum
                 );
+
+        if (evidenceManager != null) {
+
+            evidenceManager.record(
+                    player,
+                    reason,
+                    Map.of()
+            );
+        }
 
         boolean remove =
                 actionMode.equals("REMOVE")
@@ -454,9 +447,7 @@ public final class BedrockAntiDupe extends JavaPlugin
                 true
         )) {
 
-            removeInvalidStacks(
-                    player
-            );
+            removeInvalidStacks(player);
         }
 
         if (alert
@@ -484,12 +475,6 @@ public final class BedrockAntiDupe extends JavaPlugin
         );
     }
 
-    /**
-     * Legacy/basic inventory listener.
-     *
-     * ProtectionListener performs the full before/after
-     * transaction lifecycle.
-     */
     @EventHandler(
             priority = EventPriority.MONITOR,
             ignoreCancelled = true
@@ -500,7 +485,6 @@ public final class BedrockAntiDupe extends JavaPlugin
 
         if (!(event.getWhoClicked()
                 instanceof Player player)) {
-
             return;
         }
 
@@ -511,12 +495,6 @@ public final class BedrockAntiDupe extends JavaPlugin
         if (!getConfig().getBoolean(
                 "detection.inventory",
                 true
-        )) {
-            return;
-        }
-
-        if (isTransactionRateLimited(
-                player
         )) {
             return;
         }
@@ -547,7 +525,6 @@ public final class BedrockAntiDupe extends JavaPlugin
 
         if (!(event.getWhoClicked()
                 instanceof Player player)) {
-
             return;
         }
 
@@ -577,11 +554,6 @@ public final class BedrockAntiDupe extends JavaPlugin
         }
     }
 
-    /**
-     * Piston event.
-     *
-     * Actual state validation is delegated to the detector.
-     */
     @EventHandler(
             priority = EventPriority.MONITOR,
             ignoreCancelled = true
@@ -598,7 +570,7 @@ public final class BedrockAntiDupe extends JavaPlugin
         }
 
         if (!getConfig().getBoolean(
-                "detection.piston",
+                "piston.extend",
                 true
         )) {
             return;
@@ -610,13 +582,10 @@ public final class BedrockAntiDupe extends JavaPlugin
             if (!isProtectedBlock(
                     block.getType()
             )) {
-
                 continue;
             }
 
             notifyNearbyPlayers(
-                    block.getLocation().getWorld()
-                            .getPlayers(),
                     block,
                     "piston extension"
             );
@@ -651,13 +620,10 @@ public final class BedrockAntiDupe extends JavaPlugin
             if (!isProtectedBlock(
                     block.getType()
             )) {
-
                 continue;
             }
 
             notifyNearbyPlayers(
-                    block.getLocation().getWorld()
-                            .getPlayers(),
                     block,
                     "piston retraction"
             );
@@ -685,15 +651,12 @@ public final class BedrockAntiDupe extends JavaPlugin
             if (!isProtectedBlock(
                     block.getType()
             )) {
-
                 continue;
             }
 
             notifyNearbyPlayers(
-                    block.getLocation().getWorld()
-                            .getPlayers(),
                     block,
-                    "explosion affecting protected block"
+                    "explosion affected protected container"
             );
         }
     }
@@ -714,7 +677,8 @@ public final class BedrockAntiDupe extends JavaPlugin
         }
 
         Material material =
-                event.getBlock().getType();
+                event.getBlock()
+                        .getType();
 
         if (material.name()
                 .contains("SHULKER_BOX")) {
@@ -736,9 +700,7 @@ public final class BedrockAntiDupe extends JavaPlugin
             return;
         }
 
-        if (isContainerMaterial(
-                material
-        )) {
+        if (isProtectedBlock(material)) {
 
             detector.begin(player);
 
@@ -766,13 +728,11 @@ public final class BedrockAntiDupe extends JavaPlugin
                         this,
                         () -> {
 
-                            if (!player.isOnline()) {
-                                return;
+                            if (player.isOnline()) {
+                                detector.reset(
+                                        player
+                                );
                             }
-
-                            detector.reset(
-                                    player
-                            );
 
                         },
                         20L
@@ -788,20 +748,28 @@ public final class BedrockAntiDupe extends JavaPlugin
                 event.getPlayer()
                         .getUniqueId();
 
-        transactionCooldown.remove(
-                uuid
-        );
+        transactionCooldown.remove(uuid);
     }
 
     private void notifyNearbyPlayers(
-            java.util.List<Player> players,
             org.bukkit.block.Block block,
             String reason
     ) {
 
-        double radius = 8.0;
+        if (block == null
+                || block.getWorld() == null) {
+            return;
+        }
 
-        for (Player player : players) {
+        double radius =
+                getConfig().getDouble(
+                        "detection.nearby-radius",
+                        8.0
+                );
+
+        for (Player player :
+                block.getWorld()
+                        .getPlayers()) {
 
             if (!isProtected(player)) {
                 continue;
@@ -812,7 +780,6 @@ public final class BedrockAntiDupe extends JavaPlugin
                             block.getLocation()
                     )
                     > radius * radius) {
-
                 continue;
             }
 
@@ -836,34 +803,36 @@ public final class BedrockAntiDupe extends JavaPlugin
         if (material.name()
                 .contains("SHULKER_BOX")) {
 
-            return getConfig().getBoolean(
-                    "piston.protect-shulker",
-                    true
-            );
+            return getConfig()
+                    .getBoolean(
+                            "containers.shulker-box",
+                            true
+                    );
         }
-
-        return isContainerMaterial(
-                material
-        );
-    }
-
-    private boolean isContainerMaterial(
-            Material material
-    ) {
 
         return switch (material) {
 
             case CHEST,
-                 TRAPPED_CHEST,
-                 ENDER_CHEST,
-                 BARREL,
+                 TRAPPED_CHEST ->
+                    getConfig().getBoolean(
+                            "containers.chest",
+                            true
+                    );
+
+            case ENDER_CHEST ->
+                    getConfig().getBoolean(
+                            "containers.ender-chest",
+                            true
+                    );
+
+            case BARREL,
                  HOPPER,
                  DROPPER,
-                 DISPENSER,
-                 FURNACE,
-                 BLAST_FURNACE,
-                 SMOKER,
-                 CRAFTER -> true;
+                 DISPENSER ->
+                    getConfig().getBoolean(
+                            "containers.other",
+                            true
+                    );
 
             default -> false;
         };
@@ -888,7 +857,7 @@ public final class BedrockAntiDupe extends JavaPlugin
         long cooldown =
                 getConfig().getLong(
                         "staff.cooldown-seconds",
-                        5
+                        5L
                 ) * 1000L;
 
         Long previous =
@@ -898,7 +867,6 @@ public final class BedrockAntiDupe extends JavaPlugin
 
         if (previous != null
                 && now - previous < cooldown) {
-
             return;
         }
 
@@ -989,7 +957,6 @@ public final class BedrockAntiDupe extends JavaPlugin
 
         if (webhook == null
                 || webhook.isBlank()) {
-
             return;
         }
 
@@ -999,7 +966,7 @@ public final class BedrockAntiDupe extends JavaPlugin
         long cooldown =
                 getConfig().getLong(
                         "discord.cooldown-seconds",
-                        10
+                        10L
                 ) * 1000L;
 
         Long previous =
@@ -1009,7 +976,6 @@ public final class BedrockAntiDupe extends JavaPlugin
 
         if (previous != null
                 && now - previous < cooldown) {
-
             return;
         }
 
@@ -1060,14 +1026,10 @@ public final class BedrockAntiDupe extends JavaPlugin
         String json =
                 "{"
                         + "\"username\":\""
-                        + escapeJson(
-                        username
-                )
+                        + escapeJson(username)
                         + "\","
                         + "\"content\":\""
-                        + escapeJson(
-                        content
-                )
+                        + escapeJson(content)
                         + "\""
                         + "}";
 
@@ -1180,10 +1142,11 @@ public final class BedrockAntiDupe extends JavaPlugin
                         "tempban %player% 7d Duplication exploit"
                 );
 
-        command = command.replace(
-                "%player%",
-                player.getName()
-        );
+        command =
+                command.replace(
+                        "%player%",
+                        player.getName()
+                );
 
         Bukkit.dispatchCommand(
                 Bukkit.getConsoleSender(),
@@ -1206,26 +1169,27 @@ public final class BedrockAntiDupe extends JavaPlugin
     }
 
     public String getActionMode() {
-
         return actionMode;
     }
 
     public Map<UUID, Integer>
     getViolations() {
-
         return violations;
     }
 
     public TransactionLedger
     getLedger() {
-
         return ledger;
     }
 
     public DupeDetector
     getDetector() {
-
         return detector;
+    }
+
+    public EvidenceManager
+    getEvidenceManager() {
+        return evidenceManager;
     }
 
     public static final class AntiDupeCommand
@@ -1236,7 +1200,6 @@ public final class BedrockAntiDupe extends JavaPlugin
         public AntiDupeCommand(
                 BedrockAntiDupe plugin
         ) {
-
             this.plugin = plugin;
         }
 
@@ -1261,16 +1224,14 @@ public final class BedrockAntiDupe extends JavaPlugin
             }
 
             if (args.length == 0) {
-
                 sendHelp(sender);
                 return true;
             }
 
             switch (
-                    args[0]
-                            .toLowerCase(
-                                    Locale.ROOT
-                            )
+                    args[0].toLowerCase(
+                            Locale.ROOT
+                    )
             ) {
 
                 case "reload" -> {
@@ -1287,7 +1248,7 @@ public final class BedrockAntiDupe extends JavaPlugin
 
                     sender.sendMessage(
                             ChatColor.AQUA
-                                    + "BedrockAntiDupe"
+                                    + "===== BedrockAntiDupe ====="
                     );
 
                     sender.sendMessage(
@@ -1343,6 +1304,8 @@ public final class BedrockAntiDupe extends JavaPlugin
 
                     sender.sendMessage(
                             ChatColor.AQUA
+                                    + "Player: "
+                                    + ChatColor.WHITE
                                     + target.getName()
                     );
 
@@ -1372,20 +1335,18 @@ public final class BedrockAntiDupe extends JavaPlugin
                             ChatColor.GRAY
                                     + "Violations: "
                                     + ChatColor.WHITE
-                                    + plugin
-                                    .getViolationCount(
-                                            target
-                                    )
+                                    + plugin.getViolationCount(
+                                    target
+                            )
                     );
 
                     sender.sendMessage(
                             ChatColor.GRAY
                                     + "Invalid stack: "
                                     + ChatColor.WHITE
-                                    + plugin
-                                    .containsInvalidStack(
-                                            target
-                                    )
+                                    + plugin.containsInvalidStack(
+                                    target
+                            )
                     );
                 }
 
@@ -1437,4 +1398,4 @@ public final class BedrockAntiDupe extends JavaPlugin
             );
         }
     }
-            }
+                    }
