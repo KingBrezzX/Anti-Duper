@@ -38,7 +38,6 @@ public final class AntiDupeCommand implements CommandExecutor, TabCompleter {
         }
 
         if (args.length == 0) {
-
             sendHelp(sender);
             return true;
         }
@@ -66,6 +65,7 @@ public final class AntiDupeCommand implements CommandExecutor, TabCompleter {
                         color(
                                 "&7Plugin: &a"
                                         + plugin.isEnabled()
+                        )
                 );
 
                 sender.sendMessage(
@@ -76,6 +76,7 @@ public final class AntiDupeCommand implements CommandExecutor, TabCompleter {
                                                 "detection.enabled",
                                                 true
                                         )
+                        )
                 );
 
                 sender.sendMessage(
@@ -86,6 +87,7 @@ public final class AntiDupeCommand implements CommandExecutor, TabCompleter {
                                                 "shop.record-context",
                                                 true
                                         )
+                        )
                 );
 
                 sender.sendMessage(
@@ -94,17 +96,18 @@ public final class AntiDupeCommand implements CommandExecutor, TabCompleter {
                                         + plugin
                                         .getEconomyRollbackManager()
                                         .isAvailable()
+                        )
                 );
 
                 sender.sendMessage(
                         color(
                                 "&7Discord webhook: &a"
-                                        + plugin
-                                        .getConfig()
+                                        + plugin.getConfig()
                                         .getBoolean(
                                                 "discord.enabled",
                                                 false
                                         )
+                        )
                 );
             }
 
@@ -234,4 +237,4 @@ public final class AntiDupeCommand implements CommandExecutor, TabCompleter {
                 message
         );
     }
-                  }
+        }
