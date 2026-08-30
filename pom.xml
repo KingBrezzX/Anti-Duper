@@ -13,9 +13,7 @@
     <packaging>jar</packaging>
 
     <name>BedrockAntiDupe</name>
-    <description>
-        Event-driven anti-duplication protection for Paper.
-    </description>
+    <description>Advanced anti-duplication protection for Paper 26.2</description>
 
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
@@ -38,11 +36,11 @@
 
     <dependencies>
 
-        <!-- Paper API -->
+        <!-- Paper 26.2 API -->
         <dependency>
             <groupId>io.papermc.paper</groupId>
             <artifactId>paper-api</artifactId>
-            <version>26.2-R0.1-SNAPSHOT</version>
+            <version>[26.2.build,)</version>
             <scope>provided</scope>
         </dependency>
 
@@ -62,7 +60,6 @@
 
         <plugins>
 
-            <!-- Java 25 -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
@@ -73,7 +70,6 @@
                 </configuration>
             </plugin>
 
-            <!-- Reproducible JAR -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-jar-plugin</artifactId>
