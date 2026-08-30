@@ -1,407 +1,168 @@
-# ============================================================
+# ==========================================================
 # BedrockAntiDupe
-# ZyrexSMP
-#
-# Target:
-#   Paper 26.2
-#   Java 25
-#
-# Protection philosophy:
-#   - Event driven
-#   - No world-wide chunk scanning
-#   - No synchronous Discord/network requests
-#   - No console spam
-#   - Normal TNT/piston mechanics are NOT globally disabled
-#   - Suspicious inventory increases are validated by the detector
-# ============================================================
+# Version: 2.0.0
+# ==========================================================
 
-
-# ------------------------------------------------------------
+# ----------------------------------------------------------
 # GENERAL
-# ------------------------------------------------------------
+# ----------------------------------------------------------
 
 settings:
 
-  # Master switch
+  # Master switch.
   enabled: true
 
-  # Protect Java players
-  protect-java: true
-
-  # Protect Bedrock players through Floodgate
-  protect-bedrock: true
-
-  # Time between transaction validations for one player.
-  #
-  # Lower = more sensitive
-  # Higher = less processing
-  transaction-cooldown-ms: 150
-
-  # Radius around piston/explosion/container events
-  # in which players can be validated.
-  nearby-radius: 8.0
+  # Plugin only reacts to transactions that are actually
+  # observed by the server.
+  safe-mode: true
 
 
-# ------------------------------------------------------------
+# ----------------------------------------------------------
 # DETECTION
-# ------------------------------------------------------------
+# ----------------------------------------------------------
 
 detection:
 
-  # Inventory transactions
-  inventory: true
-
-  # Shulker-related transactions
-  shulker: true
-
-  # Piston-related transactions
-  piston: true
-
-  # Container -> hopper -> container movement
-  container-movement: true
-
-  # Radius used for event-based validation
-  nearby-radius: 8.0
-
-  # Prevent the same player from being validated repeatedly
-  # by multiple events in a very short period.
-  event-cooldown-ms: 250
-
-
-# ------------------------------------------------------------
-# PROTECTED CONTAINERS
-# ------------------------------------------------------------
-
-containers:
-
-  # Normal shulker boxes
-  shulker-box: true
-
-  # Ender Chest
-  ender-chest: true
-
-  # Chest
-  chest: true
-
-  # Trapped Chest
-  trapped-chest: true
-
-  # Barrel / Hopper / Dropper / Dispenser
-  other: true
-
-
-# ------------------------------------------------------------
-# PISTON PROTECTION
-# ------------------------------------------------------------
-
-piston:
-
   enabled: true
 
-  # Piston extension validation
-  extend: true
+  # Inventory transactions that deserve additional checking.
+  inspect-sensitive-transactions: true
 
-  # Piston retraction validation
-  retract: true
-
-  # Protect shulker boxes moved by piston mechanics
-  protect-shulker: true
-
-  # Protect other configured containers moved by piston mechanics
-  protect-containers: true
-
-
-# ------------------------------------------------------------
-# EXPLOSION / TNT PROTECTION
-# ------------------------------------------------------------
-
-explosion:
-
-  enabled: true
-
-  # Observe TNT/entity explosions
-  entity-explosion: true
-
-  # Observe block-based explosions
-  block-explosion: true
-
-  # Validate containers involved in explosions
-  protect-containers: true
-
-  # Validate shulkers involved in explosions
-  protect-shulkers: true
-
+  # Very large instantaneous increases are suspicious.
+  #
   # IMPORTANT:
-  #
-  # false = plugin does NOT globally cancel TNT/explosions.
-  # The anti-dupe system only observes the transaction and
-  # validates inventory/container state afterwards.
-  #
-  # Set true only if you intentionally want to cancel an
-  # explosion that directly affects a protected container.
-  cancel-protected-explosion: false
+  # This is NOT the only detection method.
+  # Normal gameplay must not be punished simply because
+  # a player owns many items.
+  instant-increase-threshold: 256
 
 
-# ------------------------------------------------------------
-# SHOP / SELL / BUY / ORDER / AH
-# ------------------------------------------------------------
+# ----------------------------------------------------------
+# SHULKER PROTECTION
+# ----------------------------------------------------------
+
+shulker:
+
+  enabled: true
+
+  # Automatically covers every vanilla colored shulker box.
+  all-colors: true
+
+  # Check shulker-related inventory/container transactions.
+  inspect-container-transactions: true
+
+  # Check suspicious rapid movement involving shulkers.
+  inspect-rapid-transactions: true
+
+
+# ----------------------------------------------------------
+# SHOP
+# ----------------------------------------------------------
 
 shop:
 
-  enabled: true
+  # Record shop menu context.
+  record-context: true
 
-  # Validate when a shop GUI closes.
-  validate-on-close: true
-
-  # Detect command-based shop transactions.
-  command-detection: true
-
-  # Prevent command spam from causing excessive validations.
-  command-cooldown-ms: 250
-
-  # Commands watched by the generic command listener.
+  # Shop inventory title keywords.
   #
-  # Add/remove commands depending on the shop plugins installed
-  # on your server.
-  commands:
+  # You can add names used by your own shop plugin.
+  title-keywords:
 
-    - shop
-    - sell
-    - sellall
-    - sellhand
-    - buy
-    - order
-    - orders
-    - ah
-    - auction
-    - market
-    - store
+    - "shop"
+    - "store"
+    - "market"
+    - "sell"
+    - "buy"
+    - "order"
+    - "auction"
 
-  # Shop GUI title detection.
+  # The anti-dupe system must use the ACTUAL recorded
+  # transaction price when rolling back money.
   #
-  # Case-insensitive.
-  #
-  # Example:
-  # "Shop"
-  # "Server Shop"
-  # "Sell Menu"
-  # "Auction House"
-  inventory-title-keywords:
-
-    - shop
-    - sell
-    - buy
-    - order
-    - auction
-    - market
-    - store
+  # It must never guess the price from an arbitrary item value.
+  require-recorded-price: true
 
 
-# ------------------------------------------------------------
-# ACTION
-# ------------------------------------------------------------
+# ----------------------------------------------------------
+# ACTIONS
+# ----------------------------------------------------------
 
-action:
+actions:
 
-  # Available:
-  #
-  # ALERT
-  #   -> notify staff + Discord
-  #
-  # REMOVE
-  #   -> remove only detected impossible/invalid stacks
-  #
-  # REMOVE_AND_ALERT
-  #   -> remove invalid stacks + notify staff + Discord
-  #
-  mode: REMOVE_AND_ALERT
+  # Remove confirmed duplicated items.
+  remove-confirmed-items: true
 
-  remove:
+  # Do NOT remove an item only because it is suspicious.
+  remove-only-confirmed: true
 
-    enabled: true
-
-    # Force inventory resynchronization after an invalid
-    # stack is removed.
-    resync-inventory: true
-
-  alert:
-
-    enabled: true
-
-    # Discord alert follows discord.enabled below.
-    discord: true
+  # Send an optional message to the detected player.
+  notify-player: false
 
 
-# ------------------------------------------------------------
-# INVALID STACK PROTECTION
-# ------------------------------------------------------------
+# ----------------------------------------------------------
+# ECONOMY ROLLBACK
+# ----------------------------------------------------------
 
-#
-# This protection catches physically impossible stack sizes.
-#
-# Example:
-#
-# Normal:
-#   Diamond = 64
-#
-# Invalid:
-#   Diamond = 128 in one slot
-#
-# The plugin does NOT simply delete every shulker.
-# It only removes stacks that exceed the item's actual
-# Bukkit max stack size.
-#
-
-
-# ------------------------------------------------------------
-# EVIDENCE
-# ------------------------------------------------------------
-
-evidence:
+economy:
 
   enabled: true
 
-  # Prevent excessive disk writes from the same player.
-  #
-  # Evidence is written asynchronously.
-  write-cooldown-ms: 1000
+  # Only rollback money generated by a recorded transaction.
+  require-recorded-transaction: true
+
+  # Never guess the amount.
+  use-exact-transaction-value: true
+
+  # If the player has less money than the duplicated sale
+  # generated, only the available balance can be withdrawn.
+  allow-partial-rollback: true
+
+  # Never allow the balance to become negative.
+  prevent-negative-balance: true
 
 
-# ------------------------------------------------------------
-# STAFF ALERTS
-# ------------------------------------------------------------
-
-staff:
-
-  enabled: true
-
-  # Permission required to receive anti-dupe alerts.
-  permission: bedrockantidupe.alert
-
-  # Same player cannot generate another staff alert
-  # until this cooldown expires.
-  cooldown-seconds: 5
-
-
-# ------------------------------------------------------------
+# ----------------------------------------------------------
 # DISCORD WEBHOOK
-# ------------------------------------------------------------
+# ----------------------------------------------------------
 
 discord:
 
-  # Master Discord switch.
   enabled: false
 
-  # Discord webhook URL.
-  #
-  # NEVER put a public webhook URL into a GitHub repository.
-  #
-  # Example:
-  #
-  # webhook-url: "https://discord.com/api/webhooks/..."
-  #
+  # Put your Discord webhook URL here.
   webhook-url: ""
 
-  # Webhook username
-  username: "BedrockAntiDupe"
+  # Do not send the same transaction repeatedly.
+  prevent-duplicate-alerts: true
 
-  # Same player cannot generate another Discord alert
-  # until this cooldown expires.
+  # Minimum time between alerts for the same player.
   cooldown-seconds: 10
 
+  # Send alert when a confirmed duplicated item is removed.
+  notify-dupe: true
 
-# ------------------------------------------------------------
-# PUNISHMENT
-# ------------------------------------------------------------
-
-punishment:
-
-  # Disabled by default.
-  #
-  # Enable only after testing the detector on your server.
-  enabled: false
-
-  # Number of violations required.
-  violations:
-
-    # Punishment threshold
-    threshold: 5
-
-  # Console command executed after threshold.
-  #
-  # %player% is replaced with the player's name.
-  #
-  # Example:
-  # tempban %player% 7d Duplication exploit
-  #
-  command: "tempban %player% 7d Duplication exploit"
+  # Send alert when money is rolled back.
+  notify-economy-rollback: true
 
 
-# ------------------------------------------------------------
-# VIOLATION THRESHOLDS
-# ------------------------------------------------------------
+# ----------------------------------------------------------
+# MAINTENANCE
+# ----------------------------------------------------------
 
-violations:
+maintenance:
 
-  thresholds:
+  # 1200 ticks = 60 seconds.
+  interval-ticks: 1200
 
-    # Punishment threshold.
-    #
-    # This is intentionally conservative.
-    punish: 5
+  # Temporary transaction data older than this is removed.
+  cache-max-age-ms: 300000
 
 
-# ------------------------------------------------------------
+# ----------------------------------------------------------
 # MESSAGES
-# ------------------------------------------------------------
+# ----------------------------------------------------------
 
 messages:
 
-  prefix: "&8[&bAntiDupe&8] "
-
-  staff: "&cDupe suspected &7| &f%player% &7| &f%reason% &7| violations: &f%violations%"
-
-
-# ------------------------------------------------------------
-# CONSOLE
-# ------------------------------------------------------------
-
-console:
-
-  # Only actual errors are logged.
-  #
-  # Normal detections are NOT printed every time.
-  errors: true
-
-
-# ------------------------------------------------------------
-# PERFORMANCE
-# ------------------------------------------------------------
-
-performance:
-
-  # Never perform broad world/chunk scanning from this config.
-  #
-  # The plugin is event-driven.
-  loaded-chunks-only: true
-
-  # Maximum validation operations queued for one player.
-  #
-  # Prevents event storms from creating an enormous queue.
-  max-pending-validations-per-player: 3
-
-
-# ------------------------------------------------------------
-# FUTURE / COMPATIBILITY FLAGS
-# ------------------------------------------------------------
-
-compatibility:
-
-  # Protect transactions created by other plugins.
-  plugin-transactions: true
-
-  # Keep Java players protected even when Floodgate is installed.
-  java-protection: true
-
-  # Keep Bedrock players protected when Floodgate is installed.
-  bedrock-protection: true
+  dupe-detected: "&c[AntiDupe] Suspicious duplicated item removed."
