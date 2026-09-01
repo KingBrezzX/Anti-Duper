@@ -1,6 +1,6 @@
 # Changelog
 
-## 2.6.0
+## 2.7.0
 - Hardened transaction burst correlation.
 - Added bundled SQLite persistence for transaction/economy history.
 - Added durable append-only transaction journal with rotation.

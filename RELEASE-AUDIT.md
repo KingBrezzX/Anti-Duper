@@ -1,4 +1,4 @@
-# BedrockAntiDupe 2.6.0 Release Audit
+# BedrockAntiDupe 2.7.0 Release Audit
 
 ## Target
 - Paper 26.2
@@ -6,25 +6,31 @@
 - Java/JDK 25
 - Java Edition
 
-## Safety changes
-- Transaction bursts are coalesced instead of overwriting or creating one task per click.
-- Inventory automation events are not treated as naive before/after transactions because Paper may already have removed the source item when `InventoryMoveItemEvent` fires.
-- Destructive removal is opt-in and requires durable recovery.
-- Recovery is written atomically and fsynced before removal.
-- The affected inventory slots are revalidated immediately before removal.
-- A durable transaction journal entry is written before destructive removal.
-- Economy rollback is independent of ordinary inventory confirmation.
-- Loaded-container scanning is incremental and never loads chunks.
-- SQLite persistence is bundled and writes are serialized asynchronously.
+## Implemented in this source candidate
+- Multi-pending player transactions
+- Durable JSONL transaction journal
+- SQLite transaction/economy persistence
+- Data-component-aware ItemStack fingerprinting via Paper serialization
+- Inventory click/drag/creative/craft/smithing tracking
+- Player drop/pickup/consume tracking
+- Hopper and hopper-minecart pickup/move telemetry
+- Paper merchant purchase/trade context telemetry
+- Shulker break integrity checks
+- Incremental loaded-container scanner
+- Durable recovery backup before destructive action
+- Idempotent recovery lock and interrupted-restore preservation
+- Async Discord network I/O
+- Vault economy integration without making inventory detection depend on Vault
+- JDK 25 CI verification
 
-## Paper 26.2 API usage
-- Data Component-aware item fingerprinting through serialized item state.
-- Paper native shulker duplication telemetry.
-- Hopper search telemetry.
-- Inventory/Craft/Smith/Creative transaction observation.
+## Release gates
+The following cannot be truthfully marked green from source inspection alone:
 
-## Known limitations
-This plugin cannot guarantee prevention of every future exploit. New Mojang/Paper/plugin-specific exploits require new rules or adapters. The plugin therefore favors conservation checks, persistent evidence, recovery, and safe confirmation rather than destructive heuristics.
+1. GitHub Actions `mvn clean verify` on JDK 25.
+2. Runtime integration on an actual Paper 26.2 server.
+3. Legitimate gameplay regression tests.
+4. Crash/restart/player-data rollback simulation.
+5. Real Vault/shop provider integration.
+6. Real Discord webhook/rate-limit behavior.
 
-## Required release verification
-GitHub Actions must pass on JDK 25. A staging server running Paper 26.2 must be used to test normal inventory transfers, crafting, smithing, shulkers, hopper automation, reconnect/logout, economy integration, recovery, Discord failure, and restart/crash recovery before publishing a production release.
+A public release must not be labelled production-ready until those gates pass.
