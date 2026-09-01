@@ -1,11 +1,11 @@
 prefix: "&8[&bAntiDupe&8] &r"
 
 general:
-  no-permission: "&cKamu tidak memiliki permission."
-  player-only: "&cCommand ini hanya dapat digunakan oleh pemain."
-  reloaded: "&aKonfigurasi BedrockAntiDupe berhasil di-reload."
-  enabled: "&aAntiDupe aktif."
-  disabled: "&cAntiDupe sedang nonaktif."
+  no-permission: "&cYou do not have permission to use this command."
+  player-only: "&cThis command can only be used by a player."
+  reloaded: "&aBedrockAntiDupe configuration reloaded successfully."
+  enabled: "&aAntiDupe is enabled."
+  disabled: "&cAntiDupe is disabled."
 
 status:
   header: "&8&m-----------------------------"
@@ -18,43 +18,43 @@ status:
   footer: "&8&m-----------------------------"
 
 dupe:
-  suspicious: "&eAktivitas inventory mencurigakan terdeteksi. Sistem sedang melakukan verifikasi."
-  confirmed: "&c&lDUPE TERKONFIRMASI! &7%item% x%amount% &8(%action%)"
-  item-removed: "&c%amount%x %item% telah dihapus karena duplikasi terkonfirmasi."
-  no-action: "&aTidak ada tindakan yang diperlukan."
-  transaction-missing: "&eTransaksi tidak dapat diverifikasi. Tidak ada item yang dihapus."
+  suspicious: "&eSuspicious inventory activity detected. The system is verifying the transaction."
+  confirmed: "&c&lCONFIRMED DUPE! &7%item% x%amount% &8(%action%)"
+  item-removed: "&c%amount%x %item% was removed because a confirmed duplication was detected."
+  no-action: "&aNo action was required."
+  transaction-missing: "&eThe transaction could not be verified. No items were removed."
 
 economy:
-  rollback-start: "&eTransaksi ekonomi sedang diverifikasi."
-  rollback-success: "&aRollback ekonomi berhasil: &f$%amount%"
-  rollback-failed: "&cRollback ekonomi gagal. Tidak ada perubahan uang yang dilakukan."
-  transaction-not-found: "&eTransaksi penjualan tidak ditemukan. Uang tidak disentuh."
-  invalid-amount: "&cJumlah rollback tidak valid. Tidak ada perubahan ekonomi."
+  rollback-start: "&eThe economy transaction is being verified."
+  rollback-success: "&aEconomy rollback completed: &f$%amount%"
+  rollback-failed: "&cEconomy rollback failed. No money was changed."
+  transaction-not-found: "&eThe sale transaction was not found. No money was changed."
+  invalid-amount: "&cThe rollback amount is invalid. No economy change was made."
 
 discord:
-  enabled: "&aDiscord notification aktif."
-  disabled: "&eDiscord notification nonaktif."
-  invalid-webhook: "&cDiscord webhook tidak valid."
-  sent: "&aNotifikasi Discord berhasil dikirim."
-  failed: "&cGagal mengirim notifikasi Discord."
+  enabled: "&aDiscord notifications are enabled."
+  disabled: "&eDiscord notifications are disabled."
+  invalid-webhook: "&cThe Discord webhook URL is invalid."
+  sent: "&aDiscord notification sent successfully."
+  failed: "&cFailed to send the Discord notification."
 
 admin:
-  reload: "&aConfiguration berhasil dimuat ulang."
-  scan-start: "&ePemeriksaan anti-dupe dimulai..."
-  scan-complete: "&aPemeriksaan selesai."
-  debug-enabled: "&aDebug mode diaktifkan."
-  debug-disabled: "&eDebug mode dinonaktifkan."
+  reload: "&aConfiguration reloaded successfully."
+  scan-start: "&eAnti-dupe scan started..."
+  scan-complete: "&aScan completed."
+  debug-enabled: "&aDebug mode enabled."
+  debug-disabled: "&eDebug mode disabled."
 
 errors:
-  internal: "&cTerjadi kesalahan internal AntiDupe."
-  transaction: "&cTerjadi kesalahan saat memproses transaksi."
-  economy-provider: "&cProvider ekonomi tidak tersedia."
-  configuration: "&cKonfigurasi AntiDupe tidak valid."
+  internal: "&cAn internal AntiDupe error occurred."
+  transaction: "&cAn error occurred while processing the transaction."
+  economy-provider: "&cThe economy provider is unavailable."
+  configuration: "&cThe AntiDupe configuration is invalid."
 
 placeholders:
   status:
-    enabled: "&aAKTIF"
-    disabled: "&cNONAKTIF"
+    enabled: "&aENABLED"
+    disabled: "&cDISABLED"
   boolean:
-    yes: "&aYA"
-    no: "&cTIDAK"
+    yes: "&aYES"
+    no: "&cNO"
