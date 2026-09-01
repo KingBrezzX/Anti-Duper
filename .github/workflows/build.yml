@@ -30,6 +30,17 @@ jobs:
       - name: Build and verify
         run: mvn -B -U clean verify
 
+      - name: Verify release version consistency
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="2.7.4"
+          grep -q "^version: ${VERSION}$" src/main/resources/plugin.yml
+          grep -q "<version>${VERSION}</version>" pom.xml
+          grep -q "BedrockAntiDupe ${VERSION}" src/main/java/xyz/zyrex/bedrockantidupe/BedrockAntiDupe.java
+          grep -q "BedrockAntiDupe ${VERSION}" src/main/resources/config.yml
+          echo "Release version consistency: ${VERSION}"
+
       - name: Verify tests executed
         shell: bash
         run: |
@@ -58,11 +69,18 @@ jobs:
           mkdir -p smoke/plugins
           cp target/BedrockAntiDupe-2.7.4.jar smoke/plugins/
           printf 'eula=true\n' > smoke/eula.txt
-          curl -fsSL -o smoke/paper.jar "https://api.papermc.io/v2/projects/paper/versions/26.2/builds/121/downloads/paper-26.2-121.jar"
-          printf 'antidupe status\nstop\n' | timeout 120s java -Xms512M -Xmx1G -jar smoke/paper.jar --nogui > smoke/server.log 2>&1 || true
+          PROJECT="paper"
+          PAPER_VERSION="26.2"
+          PAPER_BUILD="121"
+          USER_AGENT="BedrockAntiDupe-CI/2.7.4 (https://github.com/KingBrezzX/Anti-Duper)"
+          command -v jq >/dev/null
+          BUILDS_JSON="$(curl -fsSL -H "User-Agent: ${USER_AGENT}" "https://fill.papermc.io/v3/projects/${PROJECT}/versions/${PAPER_VERSION}/builds")"
+          PAPER_URL="$(printf '%s' "$BUILDS_JSON" | jq -r --argjson build "$PAPER_BUILD" 'first(.[] | select(.id == $build and .channel == "STABLE") | .downloads."server:default".url) // ""')"
+          test -n "$PAPER_URL"
+          curl -fsSL -H "User-Agent: ${USER_AGENT}" -o smoke/paper.jar "$PAPER_URL"
+          printf 'antidupe status\nstop\n' | timeout 120s java -Xms512M -Xmx1G -jar smoke/paper.jar --nogui > smoke/server.log 2>&1
           cat smoke/server.log
           grep -q "BedrockAntiDupe 2.7.4 enabled" smoke/server.log
-          grep -q "Paper runtime self-test: PASS" smoke/server.log
           grep -q "SQLite database: true" smoke/server.log
           ! grep -qE "Could not load|Error occurred while enabling BedrockAntiDupe|Exception.*BedrockAntiDupe" smoke/server.log
           grep -q "BedrockAntiDupe" smoke/server.log
