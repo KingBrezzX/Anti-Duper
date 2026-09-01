@@ -1,284 +1,74 @@
-# BedrockAntiDupe
+# BedrockAntiDupe 2.4.0
 
-Advanced event-driven anti-duplication protection for Paper servers.
+Premium all-in-one inventory-integrity and anti-duplication protection for **Paper 26.2 / Java 25**.
 
-Designed for:
+## Target platform
 
 - Paper 26.2
 - Java 25
 - Java Edition
-- Bedrock players through Geyser/Floodgate
+- Geyser/Floodgate players are supported without making Floodgate mandatory
 
-## Features
+Paper 26.2 uses Java 25. This project intentionally does **not** target Java 21 for the 26.2 build.
 
-### Container Protection
+## Core protection
 
-Protects transactions involving:
+- Main-thread inventory transaction capture
+- Per-player transaction identity and same-tick burst protection
+- Player inventory + viewed container conservation checks
+- Inventory click and drag protection
+- Hopper/container-to-player transaction monitoring
+- Shulker box protection for all colors
+- Shulker content-aware fingerprints
+- Evidence logging
+- Safe recovery backups before automatic removal
+- Discord alerts with cooldowns
+- Vault economy integration hooks with fail-safe rollback support
+- Loaded-container integrity scan
+- Impossible stack detection
+- Staff notifications
+- Operator/permission bypass for trusted testing
+- Configurable tracked materials
+- Configurable shop-title exclusions
 
-- Shulker Boxes
-- Chests
-- Trapped Chests
-- Ender Chests
-- Barrels
-- Hoppers
-- Droppers
-- Dispensers
+## Safety model
 
-### Duplication Transaction Protection
+The plugin does not treat every inventory increase as a dupe. Legitimate transfers must preserve the combined quantity of the player inventory and the observed container.
 
-The plugin monitors suspicious transaction boundaries instead of continuously scanning the entire world.
+Automatic removal is **disabled by default**. Enable it only after testing the server's complete plugin stack.
 
-Protected transaction paths include:
-
-- Inventory clicks
-- Inventory dragging
-- Container movement
-- Hopper movement
-- Piston movement
-- Piston retraction
-- TNT/entity explosions
-- Container explosions
-- Shulker breaking
-- Shop GUI transactions
-- Shop commands
-- Sell transactions
-- Buy transactions
-- Order transactions
-- Auction/market transactions
-
-### Java and Bedrock
-
-Both Java and Bedrock players can be protected.
-
-Bedrock detection uses Floodgate when available.
-
-Java protection remains enabled independently.
-
-### Discord Alerts
-
-Suspicious transactions can be sent to a Discord webhook.
-
-Discord requests are asynchronous so network latency does not block the main server thread.
-
-Per-player cooldowns prevent Discord spam.
-
-### Staff Alerts
-
-Staff members with:
-
-    bedrockantidupe.alert
-
-can receive in-game alerts.
-
-Alerts are rate limited.
-
-### Evidence
-
-Detection evidence can be stored asynchronously in:
-
-    plugins/BedrockAntiDupe/evidence/
-
-Each player receives a separate evidence file.
-
-Example:
-
-    plugins/BedrockAntiDupe/evidence/<UUID>.log
-
-### Actions
-
-Available modes:
-
-    ALERT
-    REMOVE
-    REMOVE_AND_ALERT
-
-`ALERT`
-
-Only reports the suspicious transaction.
-
-`REMOVE`
-
-Removes invalid impossible stacks.
-
-`REMOVE_AND_ALERT`
-
-Removes invalid impossible stacks and alerts staff/Discord.
-
-## Important Safety Behavior
-
-BedrockAntiDupe does not globally disable TNT.
-
-It does not globally disable pistons.
-
-It does not disable normal shulker mechanics.
-
-It does not continuously scan every loaded chunk.
-
-It uses event-driven validation to minimize server overhead.
-
-## Installation
-
-1. Build the plugin.
-
-2. Put:
-
-    BedrockAntiDupe-1.0.0.jar
-
-   into:
-
-    plugins/
-
-3. Restart the server.
-
-4. Edit:
-
-    plugins/BedrockAntiDupe/config.yml
-
-5. Restart the server or run:
-
-    /antidupe reload
-
-## Permissions
-
-### Administration
-
-    bedrockantidupe.admin
-
-Allows:
-
-    /antidupe reload
-    /antidupe status
-    /antidupe check <player>
-    /antidupe violations
-
-### Staff alerts
-
-    bedrockantidupe.alert
-
-Receives anti-dupe alerts.
+When removal is enabled, removed stacks are backed up in the recovery vault before they are removed.
 
 ## Commands
 
-### Reload
+- `/antidupe`
+- `/antidupe reload`
+- `/antidupe status`
+- `/antidupe scan`
+- `/antidupe scan loaded`
+- `/antidupe cleanup`
+- `/antidupe history`
+- `/antidupe recovery`
+- `/antidupe recovery restore <transaction-id>`
+- `/antidupe debug`
 
-    /antidupe reload
+## Permissions
 
-Reloads the configuration.
+- `bedrockantidupe.admin`
+- `bedrockantidupe.notify`
+- `bedrockantidupe.debug`
+- `bedrockantidupe.bypass`
 
-### Status
+## Build
 
-    /antidupe status
+GitHub Actions builds with **Temurin Java 25** and Maven.
 
-Shows plugin status and detection mode.
+Paper API is resolved from the official Paper Maven repository using the 26.2 build range.
 
-### Check
+## Important
 
-    /antidupe check <player>
-
-Displays:
-
-- Player
-- Platform
-- Protected status
-- Violations
-- Invalid stack status
-
-### Violations
-
-    /antidupe violations
-
-Shows the number of players currently tracked by the violation system.
-
-## Discord Configuration
-
-Open:
-
-    plugins/BedrockAntiDupe/config.yml
-
-Set:
-
-    discord:
-      enabled: true
-      webhook-url: "YOUR_WEBHOOK"
-
-Never commit a real Discord webhook URL to GitHub.
-
-## Recommended Production Configuration
-
-Start with:
-
-    action:
-      mode: REMOVE_AND_ALERT
-
-    punishment:
-      enabled: false
-
-Test the detector first.
-
-After confirming that legitimate transactions are not being flagged, punishment can be enabled if desired.
-
-## Performance
-
-The plugin is designed around event-driven detection.
-
-It does not perform a permanent world-wide scan.
-
-It does not scan unloaded chunks.
-
-Discord communication is asynchronous.
-
-Evidence writes are asynchronous.
-
-Alert cooldowns reduce repeated processing.
-
-## Troubleshooting
-
-### Plugin does not start
-
-Check:
-
-- Java version
-- Paper version
-- plugin.yml
-- server console
-
-Required environment:
-
-    Paper 26.2
-    Java 25
-
-### Bedrock detection does not work
-
-Make sure Floodgate is installed and running.
-
-The anti-dupe system can still protect Java players without Floodgate.
-
-### Discord does not send
-
-Check:
-
-    discord.enabled: true
-
-and:
-
-    discord.webhook-url: "..."
-
-Also check:
-
-    console.errors: true
-
-## Security
-
-Do not publish:
-
-- Discord webhook URLs
-- server credentials
-- database passwords
-- private configuration
-- staff-only information
+No anti-dupe plugin can honestly guarantee detection of every future Mojang, Paper, plugin, or mod exploit. This project is designed as a defense-in-depth system: transaction conservation, container integrity, fingerprints, evidence, recovery, and configurable integrations work together rather than relying on one heuristic.
 
 ## License
 
-Private server plugin.
-
-Copyright ZyrexSMP.
+Private server plugin. Copyright KingBrezzX.
