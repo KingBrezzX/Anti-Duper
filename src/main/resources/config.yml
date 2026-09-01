@@ -1,4 +1,4 @@
-# BedrockAntiDupe 2.5.0 | Paper 26.2 | Java 25
+# BedrockAntiDupe 2.6.0 | Paper 26.2 | Java 25
 settings:
   enabled: true
   require-confirmation: true
@@ -82,7 +82,7 @@ safety:
   ignore-operators: true
   bypass-permission: bedrockantidupe.bypass
   require-transaction: true
-  require-economy-transaction: true
+  require-economy-transaction: false
 
 # Premium protection modules
 journal:
@@ -100,13 +100,14 @@ protection:
   suspicious-container-movement: true
   burst-window-ms: 75
   max-pending-transactions: 64
+  max-scan-chunks-per-tick: 2
   trusted-inventory-titles: []
   trusted-plugins: []
   loaded-container-scan: true
   scan-interval-seconds: 120
 recovery:
   enabled: true
-  directory: evidence
+  directory: recovery
   require-backup-before-removal: true
   max-records: 10000
 fingerprint:
@@ -114,3 +115,10 @@ fingerprint:
   shulker-contents: true
   books: true
   custom-items: true
+
+# Optional persistent transaction database. SQLite is bundled in the release JAR.
+database:
+  enabled: true
+  file: antiduper.db
+  busy-timeout-ms: 3000
+
