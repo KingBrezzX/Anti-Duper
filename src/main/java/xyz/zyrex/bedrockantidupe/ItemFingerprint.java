@@ -4,42 +4,35 @@ import org.bukkit.inventory.ItemStack;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
-import java.util.*;
+import java.util.Base64;
+import java.util.HexFormat;
 
-/** Stable, content-aware fingerprint for forensic comparison. */
+/** Paper 26.2 item identity using the full serialized item state, including modern data components. */
 public final class ItemFingerprint {
     private ItemFingerprint() {}
 
-    public static String of(ItemStack item) {
+    public static String sha256(ItemStack item) {
         if (item == null || item.getType().isAir()) return "AIR";
         try {
-            Map<String, Object> data = new TreeMap<>();
-            data.putAll(item.serialize());
-            data.remove("amount");
-            return sha256(canonical(data));
+            MessageDigest md = MessageDigest.getInstance("SHA-256");
+            // serializeAsBytes is the canonical Paper/Bukkit NBT representation and therefore
+            // includes the runtime data-component state. getDataTypes() is included as an
+            // explicit component inventory so component additions cannot silently collapse IDs.
+            String types = item.getDataTypes().stream().map(String::valueOf).sorted().reduce((a,b)->a+"\n"+b).orElse("");
+            md.update(types.getBytes(StandardCharsets.UTF_8));
+            md.update((byte) 0);
+            md.update(item.serializeAsBytes());
+            return HexFormat.of().formatHex(md.digest());
         } catch (Exception ex) {
-            return item.getType().name() + ":" + String.valueOf(item.getItemMeta());
+            return HexFormat.of().formatHex(item.toString().getBytes(StandardCharsets.UTF_8));
         }
     }
 
-    private static String canonical(Object value) {
-        if (value instanceof Map<?, ?> map) {
-            List<String> parts = new ArrayList<>();
-            for (Map.Entry<?, ?> e : map.entrySet()) parts.add(String.valueOf(e.getKey()) + "=" + canonical(e.getValue()));
-            Collections.sort(parts);
-            return "{" + String.join(",", parts) + "}";
-        }
-        if (value instanceof Collection<?> c) {
-            List<String> parts = c.stream().map(ItemFingerprint::canonical).toList();
-            return "[" + String.join(",", parts) + "]";
-        }
-        return String.valueOf(value);
+    public static String canonical(ItemStack item) {
+        return item == null || item.getType().isAir() ? "AIR" : item.getType().name()+"|"+item.getAmount()+"|"+sha256(item);
     }
 
-    private static String sha256(String input) throws Exception {
-        byte[] digest = MessageDigest.getInstance("SHA-256").digest(input.getBytes(StandardCharsets.UTF_8));
-        StringBuilder out = new StringBuilder(64);
-        for (byte b : digest) out.append(String.format(Locale.ROOT, "%02x", b));
-        return out.toString();
+    public static String base64(ItemStack item) {
+        return item == null ? "" : Base64.getEncoder().encodeToString(item.serializeAsBytes());
     }
 }

@@ -151,41 +151,33 @@ public final class DupeActionManager {
      *
      * It does not wipe the player's whole inventory.
      */
-    private int removeConfirmedItems(
-            Player player,
-            DupeDetector.DetectionResult result
-    ) {
-
-        if (!plugin.getConfig().getBoolean(
-                "actions.remove-confirmed-items",
-                true
-        )) {
-
-            return 0;
-        }
-
+    private int removeConfirmedItems(Player player, DupeDetector.DetectionResult result) {
+        if (!plugin.getConfig().getBoolean("actions.remove-confirmed-items", false)) return 0;
+        if (result.transaction() == null) return 0;
         int totalRemoved = 0;
         java.util.List<ItemStack> removedItems = new java.util.ArrayList<>();
-
-        for (DupeDetector.Change change :
-                result.changes()) {
-
-            int amount =
-                    Math.max(
-                            0,
-                            change.increase()
-                    );
-
-            if (amount <= 0) {
-                continue;
-            }
-
-            int removed = removeMaterial(player, change.material(), amount, removedItems);
-            totalRemoved += removed;
+        java.util.Set<String> tracked = new java.util.HashSet<>();
+        for (DupeDetector.Change c : result.changes()) if (c.material() != null) tracked.add(c.material().name());
+        for (TransactionLedger.ItemChange change : result.transaction().changes()) {
+            ItemStack after = change.after();
+            if (after == null || after.getType().isAir() || !tracked.contains(after.getType().name())) continue;
+            int delta = change.amountDelta();
+            if (delta <= 0) continue;
+            int remove = Math.min(delta, after.getAmount());
+            ItemStack removed = after.clone(); removed.setAmount(remove); removedItems.add(removed);
+            int slot = change.slot();
+            ItemStack current = player.getInventory().getItem(slot);
+            if (current == null || current.getType() != after.getType()) continue;
+            int safeRemove = Math.min(remove, current.getAmount());
+            current.setAmount(current.getAmount() - safeRemove);
+            player.getInventory().setItem(slot, current.getAmount() <= 0 ? null : current);
+            totalRemoved += safeRemove;
         }
-
         if (!removedItems.isEmpty() && plugin.getRecoveryManager() != null) {
-            plugin.getRecoveryManager().backup(player.getUniqueId(), result.transaction().transactionId(), removedItems, result.reason());
+            if (!plugin.getRecoveryManager().backupSync(player.getUniqueId(), result.transaction().transactionId(), removedItems, result.reason())) {
+                plugin.getLogger().severe("[AntiDupe] Refusing destructive action: recovery backup was not durably written.");
+                return 0;
+            }
         }
         return totalRemoved;
     }

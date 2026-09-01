@@ -18,6 +18,9 @@ public final class BedrockAntiDupe extends JavaPlugin {
     private ExploitProtectionListener exploitProtectionListener;
     private ShopTransactionListener shopTransactionListener;
     private RecoveryManager recoveryManager;
+    private TransactionJournal transactionJournal;
+    private NativeExploitPreventionListener nativePreventionListener;
+    private PlayerStateListener playerStateListener;
     private BukkitTask maintenanceTask;
 
     @Override
@@ -34,13 +37,18 @@ public final class BedrockAntiDupe extends JavaPlugin {
         exploitProtectionListener = new ExploitProtectionListener(this, transactionLedger, dupeDetector, dupeActionManager);
         shopTransactionListener = new ShopTransactionListener(this, transactionLedger);
         recoveryManager = new RecoveryManager(this);
+        transactionJournal = new TransactionJournal(this);
+        nativePreventionListener = new NativeExploitPreventionListener(this);
+        playerStateListener = new PlayerStateListener(this);
 
         Bukkit.getPluginManager().registerEvents(exploitProtectionListener, this);
         Bukkit.getPluginManager().registerEvents(shopTransactionListener, this);
+        Bukkit.getPluginManager().registerEvents(nativePreventionListener, this);
+        Bukkit.getPluginManager().registerEvents(playerStateListener, this);
         registerCommands();
         startMaintenanceTask();
 
-        getLogger().info("BedrockAntiDupe 2.3.0 enabled | Paper 26.2 | plugin bytecode target Java 25");
+        getLogger().info("BedrockAntiDupe 2.5.0 enabled | Paper 26.2 | Java 25");
         getLogger().info("Detection: " + getConfig().getBoolean("detection.enabled", true));
         getLogger().info("Shulker protection: " + getConfig().getBoolean("shulker.enabled", true));
         getLogger().info("Vault economy: " + economyRollbackManager.isAvailable());
@@ -56,6 +64,7 @@ public final class BedrockAntiDupe extends JavaPlugin {
         if (evidenceManager != null) evidenceManager.clear();
         if (economyRollbackManager != null) economyRollbackManager.clear();
         if (discordAlertManager != null) discordAlertManager.cleanup();
+        if (transactionJournal != null) transactionJournal.close();
         getLogger().info("BedrockAntiDupe disabled.");
     }
 
@@ -81,6 +90,7 @@ public final class BedrockAntiDupe extends JavaPlugin {
         if (exploitProtectionListener != null) exploitProtectionListener.cleanup(maxAge);
         if (shopTransactionListener != null) shopTransactionListener.cleanup(maxAge);
         if (dupeActionManager != null) dupeActionManager.cleanup(maxAge);
+        if (dupeDetector != null) dupeDetector.cleanup(maxAge);
         if (economyRollbackManager != null) economyRollbackManager.cleanup(maxAge);
     }
 
@@ -134,4 +144,7 @@ public final class BedrockAntiDupe extends JavaPlugin {
     public ExploitProtectionListener getExploitProtectionListener() { return exploitProtectionListener; }
     public ShopTransactionListener getShopTransactionListener() { return shopTransactionListener; }
     public RecoveryManager getRecoveryManager() { return recoveryManager; }
+    public TransactionJournal getTransactionJournal() { return transactionJournal; }
+    public NativeExploitPreventionListener getNativePreventionListener() { return nativePreventionListener; }
+    public PlayerStateListener getPlayerStateListener() { return playerStateListener; }
 }
