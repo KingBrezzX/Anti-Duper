@@ -20,6 +20,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public final class TransactionLedger {
     private final BedrockAntiDupe plugin;
     private final Map<UUID, TransactionSnapshot> active = new ConcurrentHashMap<>();
+    private final Map<UUID, Long> activeTick = new ConcurrentHashMap<>();
     private final Map<UUID, TransactionRecord> history = new ConcurrentHashMap<>();
 
     public TransactionLedger(BedrockAntiDupe plugin) {
@@ -34,7 +35,9 @@ public final class TransactionLedger {
         Objects.requireNonNull(player, "player");
         UUID uuid = player.getUniqueId();
         TransactionSnapshot existing = active.get(uuid);
-        if (existing != null) {
+        long tick = plugin.getServer().getCurrentTick();
+        Long existingTick = activeTick.get(uuid);
+        if (existing != null && existingTick != null && existingTick == tick) {
             return existing;
         }
 
@@ -46,6 +49,7 @@ public final class TransactionLedger {
                 System.currentTimeMillis()
         );
         active.put(uuid, snapshot);
+        activeTick.put(uuid, tick);
         return snapshot;
     }
 
@@ -54,8 +58,16 @@ public final class TransactionLedger {
     }
 
     public TransactionRecord finish(Player player, Inventory viewedInventory) {
+        return finish(player, viewedInventory, null);
+    }
+
+    public TransactionRecord finish(Player player, Inventory viewedInventory, UUID expectedTransactionId) {
         if (player == null) return null;
+        TransactionSnapshot current = active.get(player.getUniqueId());
+        if (current == null) return null;
+        if (expectedTransactionId != null && !expectedTransactionId.equals(current.transactionId())) return null;
         TransactionSnapshot before = active.remove(player.getUniqueId());
+        activeTick.remove(player.getUniqueId());
         if (before == null) return null;
 
         TransactionRecord record = TransactionRecord.from(
@@ -81,12 +93,17 @@ public final class TransactionLedger {
 
     public void cleanup(long maxAgeMillis) {
         long now = System.currentTimeMillis();
-        active.entrySet().removeIf(e -> now - e.getValue().timestamp() > maxAgeMillis);
+        active.entrySet().removeIf(e -> {
+            boolean expired = now - e.getValue().timestamp() > maxAgeMillis;
+            if (expired) activeTick.remove(e.getKey());
+            return expired;
+        });
         history.entrySet().removeIf(e -> now - e.getValue().timestamp() > maxAgeMillis);
     }
 
     public void clear() {
         active.clear();
+        activeTick.clear();
         history.clear();
     }
 

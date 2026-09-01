@@ -165,6 +165,7 @@ public final class DupeActionManager {
         }
 
         int totalRemoved = 0;
+        java.util.List<ItemStack> removedItems = new java.util.ArrayList<>();
 
         for (DupeDetector.Change change :
                 result.changes()) {
@@ -179,14 +180,13 @@ public final class DupeActionManager {
                 continue;
             }
 
-            totalRemoved +=
-                    removeMaterial(
-                            player,
-                            change.material(),
-                            amount
-                    );
+            int removed = removeMaterial(player, change.material(), amount, removedItems);
+            totalRemoved += removed;
         }
 
+        if (!removedItems.isEmpty() && plugin.getRecoveryManager() != null) {
+            plugin.getRecoveryManager().backup(player.getUniqueId(), result.transaction().transactionId(), removedItems, result.reason());
+        }
         return totalRemoved;
     }
 
@@ -199,7 +199,8 @@ public final class DupeActionManager {
     private int removeMaterial(
             Player player,
             org.bukkit.Material material,
-            int amount
+            int amount,
+            java.util.List<ItemStack> removedItems
     ) {
 
         int remaining =
@@ -229,11 +230,10 @@ public final class DupeActionManager {
                 continue;
             }
 
-            int remove =
-                    Math.min(
-                            remaining,
-                            item.getAmount()
-                    );
+            int remove = Math.min(remaining, item.getAmount());
+            ItemStack removedStack = item.clone();
+            removedStack.setAmount(remove);
+            removedItems.add(removedStack);
 
             int newAmount =
                     item.getAmount()

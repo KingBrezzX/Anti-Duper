@@ -21,13 +21,30 @@ public final class AntiDupeCommand implements CommandExecutor, TabCompleter {
             case "reload" -> { plugin.reloadPlugin(); sender.sendMessage(msg("general.reloaded", "&aConfiguration reloaded.")); }
             case "status" -> status(sender);
             case "scan" -> {
-                if (!(sender instanceof Player player)) { sender.sendMessage(msg("general.player-only", "&cPlayer only.")); return true; }
-                sender.sendMessage(msg("admin.scan-start", "&eScanning..."));
-                plugin.scanPlayerInventory(player);
-                sender.sendMessage(msg("admin.scan-complete", "&aScan complete."));
+                if (args.length > 1 && args[1].equalsIgnoreCase("loaded")) {
+                    sender.sendMessage(msg("admin.scan-start", "&eScanning loaded containers..."));
+                    int findings = plugin.scanLoadedInventories();
+                    sender.sendMessage(color("&aScan complete. &7Findings: &f" + findings));
+                } else {
+                    if (!(sender instanceof Player player)) { sender.sendMessage(msg("general.player-only", "&cPlayer only.")); return true; }
+                    sender.sendMessage(msg("admin.scan-start", "&eScanning..."));
+                    int findings = plugin.scanPlayerInventory(player);
+                    sender.sendMessage(color("&aScan complete. &7Findings: &f" + findings));
+                }
             }
             case "cleanup" -> { plugin.cleanupCaches(); sender.sendMessage(color("&a[AntiDupe] Runtime caches cleaned.")); }
             case "history" -> history(sender);
+            case "recovery" -> {
+                if (args.length >= 3 && args[1].equalsIgnoreCase("restore") && sender instanceof Player player) {
+                    try {
+                        boolean ok = plugin.getRecoveryManager().restore(player, java.util.UUID.fromString(args[2]));
+                        sender.sendMessage(color(ok ? "&aRecovery restored." : "&cRecovery not found or failed."));
+                    } catch (IllegalArgumentException ex) { sender.sendMessage(color("&cInvalid transaction UUID.")); }
+                } else {
+                    sender.sendMessage(color("&6Recovery records: &f" + plugin.getRecoveryManager().list().size()));
+                    for (String id : plugin.getRecoveryManager().list()) sender.sendMessage(color("&7- &f" + id));
+                }
+            }
             case "debug" -> {
                 sender.sendMessage(color("&7Detection=" + plugin.getConfig().getBoolean("detection.enabled", true)
                         + " | Shulker=" + plugin.getConfig().getBoolean("shulker.enabled", true)
@@ -66,15 +83,16 @@ public final class AntiDupeCommand implements CommandExecutor, TabCompleter {
         sender.sendMessage(color("&6&lAntiDupe Commands"));
         sender.sendMessage(color("&e/antidupe reload &7- Reload configuration"));
         sender.sendMessage(color("&e/antidupe status &7- Protection status"));
-        sender.sendMessage(color("&e/antidupe scan &7- Scan your inventory"));
+        sender.sendMessage(color("&e/antidupe scan [loaded] &7- Scan inventory or loaded containers"));
         sender.sendMessage(color("&e/antidupe cleanup &7- Clean runtime state"));
         sender.sendMessage(color("&e/antidupe history &7- Recent transactions"));
+        sender.sendMessage(color("&e/antidupe recovery [restore <id>] &7- Safe item recovery"));
         sender.sendMessage(color("&e/antidupe debug &7- Debug status"));
     }
 
     @Override public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
         if (args.length != 1) return List.of();
-        List<String> options = List.of("reload", "status", "scan", "cleanup", "history", "debug");
+        List<String> options = List.of("reload", "status", "scan", "cleanup", "history", "recovery", "debug");
         String input = args[0].toLowerCase();
         List<String> result = new ArrayList<>();
         for (String option : options) if (option.startsWith(input)) result.add(option);
