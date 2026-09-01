@@ -1,6 +1,6 @@
 # Changelog
 
-## 2.7.4
+## 2.7.3
 - Final hardening release candidate for Paper 26.2 / Java 25.
 - Fixed shop/economy transaction correlation to reuse the active ledger transaction ID.
 - Added lifecycle transaction fences for death, respawn, teleport, quit, and graceful shutdown.
@@ -10,9 +10,9 @@
 - Removed Bedrock-only soft dependencies; Java Edition is the supported platform.
 - Added JUnit release-contract and economy/rollback tests.
 - CI now requires tests to actually execute before accepting the release artifact.
-- Updated release verification to version 2.7.4.
+- Updated release verification to version 2.7.3.
 
-## 2.7.4
+## 2.7.3
 - Java Edition only; removed Geyser/Floodgate runtime dependency assumptions.
 - Added public third-party shop transaction integration point.
 - Added stronger transaction-conservation regression tests.
@@ -20,6 +20,11 @@
 - CI now verifies Paper 26.2 startup and command path in addition to compilation/tests.
 
 ## 2.7.4
+
+- Fixed CI Paper 26.2 runtime smoke download to use the official Downloads Service v3 with a valid User-Agent.
+- Fixed release workflow references from 2.7.3 to 2.7.4.
+- Added release-version consistency checks before runtime smoke testing.
+- Runtime smoke failures are no longer masked by `|| true`.
 - Added explicit runtime-staging gate workflow.
 - Added process-kill/restart recovery smoke script.
 - Added real-player regression test plan.

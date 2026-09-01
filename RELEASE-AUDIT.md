@@ -33,7 +33,7 @@ Status: RELEASE CANDIDATE. Automated gates may be green, but real-client exploit
 
 A public release should additionally be staged on the exact Paper 26.2 build used by the server with a backup and representative plugin stack. Never advertise “100% dupe-proof”; anti-dupe software can reduce known exploit classes but cannot guarantee against unknown future server/client/plugin bugs.
 
-## 2.7.4 hardening
+## 2.7.3 hardening
 - Destructive recovery is slot-aware and refuses ambiguous/mixed inventory state.
 - Recovery uses versioned `.recovery`, `.restoring`, and `.restored` states.
 - Third-party shops can provide exact transaction identity/result instead of relying on GUI titles.
@@ -43,13 +43,20 @@ A public release should additionally be staged on the exact Paper 26.2 build use
 Real exploit/client regression still requires a real player-connected staging server; no headless CI test is represented as equivalent to that.
 
 
-## 2.7.4 transaction-correlation hardening
+## 2.7.3 transaction-correlation hardening
 - Transactions within the burst window are reused only when source and viewed-container identity match.
 - Shutdown flush preserves the currently open top inventory when it matches the transaction snapshot.
 - Reconciliations are scheduled per transaction instead of one task per player, preventing later transactions from being stranded.
 - Merchant purchases begin a pre-event transaction fence and Paper 26.2 purchase context is correlated afterward.
 - GUI shop context never invents a random transaction ID when no transaction exists.
 - Paper 26.2 PlayerPickItemEvent is included in transaction capture.
+
+## 2.7.4 CI/runtime hardening
+- CI now uses PaperMC Downloads Service v3 instead of the deprecated v2 download endpoint.
+- CI sends a descriptive User-Agent as required by the PaperMC Downloads Service.
+- CI verifies the exact Paper 26.2 build 121 stable artifact before startup smoke testing.
+- Runtime smoke failures are no longer masked by `|| true`.
+- Release version consistency is checked across Maven, plugin.yml, config, and main plugin class.
 
 ## 2.7.4 final-gate policy
 
