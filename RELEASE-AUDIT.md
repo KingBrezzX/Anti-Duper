@@ -66,3 +66,8 @@ A production release is not marked READY from compilation alone. Runtime gates a
 - Third-party shop compatibility requires an exact plugin name/version and a live integration run.
 
 No gate may be marked PASS without its evidence.
+
+
+## Release evidence boundary
+
+The repository CI can verify compilation, automated tests, Java 25 class output, and Paper 26.2 startup. It must not claim real-player exploit, actual power-loss, or a specific third-party shop plugin was tested unless that staging evidence exists. Vault is optional and is resolved without runtime class linkage when absent.

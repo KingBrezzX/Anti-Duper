@@ -1,4 +1,4 @@
-# Test Plan — BedrockAntiDupe 2.7.3
+# Test Plan — BedrockAntiDupe 2.7.4
 
 ## CI automated
 - Java 25 compilation.
