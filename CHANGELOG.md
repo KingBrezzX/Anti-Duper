@@ -1,5 +1,15 @@
 # Changelog
 
+
+## 2.7.4 — Final CI/runtime hardening
+- Removed the hard Vault class linkage from the core `ExploitProtectionListener`.
+- Kept Vault economy support optional; core anti-dupe startup no longer depends on Vault.
+- Moved shop balance reads behind `EconomyRollbackManager`'s optional integration boundary.
+- Added a live Paper 26.2 ItemStack/Data Components self-test during plugin startup.
+- Made CI fail if core listener registration or the Paper runtime self-test fails.
+- Kept Java 25 / Paper 26.2 verification and deterministic JUnit coverage.
+
+
 ## 2.7.3
 - Final hardening release candidate for Paper 26.2 / Java 25.
 - Fixed shop/economy transaction correlation to reuse the active ledger transaction ID.
