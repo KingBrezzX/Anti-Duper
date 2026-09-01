@@ -19,7 +19,6 @@ public final class EconomyRollbackManager {
 
     private final BedrockAntiDupe plugin;
     private final DiscordAlertManager discord;
-    private final Economy economy;
 
     private final Map<UUID, Long> rolledBackTransactions =
             new ConcurrentHashMap<>();
@@ -30,7 +29,6 @@ public final class EconomyRollbackManager {
     ) {
         this.plugin = plugin;
         this.discord = discord;
-        this.economy = resolveEconomy();
     }
 
     /**
@@ -39,6 +37,11 @@ public final class EconomyRollbackManager {
     public RollbackResult rollback(
             EconomyTransaction transaction
     ) {
+        if (!plugin.getConfig().getBoolean("economy.enabled", true)
+                || !plugin.getConfig().getBoolean("economy.vault", true)) {
+            return RollbackResult.failed(UUID.randomUUID(), 0, 0, "Economy rollback is disabled.");
+        }
+
         if (transaction == null) {
             return RollbackResult.failed(
                     UUID.randomUUID(),
@@ -74,13 +77,11 @@ public final class EconomyRollbackManager {
             );
         }
 
+        Economy economy = resolveEconomy();
         if (economy == null) {
             rolledBackTransactions.remove(transactionId);
-
             return RollbackResult.failed(
-                    transactionId,
-                    transaction.exactValue(),
-                    0,
+                    transactionId, transaction.exactValue(), 0,
                     "Vault economy provider is unavailable."
             );
         }
@@ -100,11 +101,9 @@ public final class EconomyRollbackManager {
         double balance =
                 economy.getBalance(offlinePlayer);
 
-        double requested =
-                Math.max(
-                        0.0,
-                        transaction.exactValue()
-                );
+        double requested = Math.max(0.0, transaction.exactValue());
+        double maxRollback = plugin.getConfig().getDouble("economy.max-single-rollback", 0.0);
+        if (maxRollback > 0.0) requested = Math.min(requested, maxRollback);
 
         double withdraw =
                 Math.min(
@@ -280,6 +279,8 @@ public final class EconomyRollbackManager {
      * Returns whether Vault economy is available.
      */
     public boolean isAvailable() {
-        return economy != null;
+        return plugin.getConfig().getBoolean("economy.enabled", true)
+                && plugin.getConfig().getBoolean("economy.vault", true)
+                && resolveEconomy() != null;
     }
     }

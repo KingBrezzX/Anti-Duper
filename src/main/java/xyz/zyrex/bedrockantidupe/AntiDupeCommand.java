@@ -1,240 +1,97 @@
 package xyz.zyrex.bedrockantidupe;
 
 import org.bukkit.ChatColor;
-import org.bukkit.command.Command;
-import org.bukkit.command.CommandExecutor;
-import org.bukkit.command.CommandSender;
-import org.bukkit.command.TabCompleter;
+import org.bukkit.command.*;
 import org.bukkit.entity.Player;
 
 import java.util.ArrayList;
 import java.util.List;
 
 public final class AntiDupeCommand implements CommandExecutor, TabCompleter {
-
     private final BedrockAntiDupe plugin;
+    public AntiDupeCommand(BedrockAntiDupe plugin) { this.plugin = plugin; }
 
-    public AntiDupeCommand(BedrockAntiDupe plugin) {
-        this.plugin = plugin;
-    }
-
-    @Override
-    public boolean onCommand(
-            CommandSender sender,
-            Command command,
-            String label,
-            String[] args
-    ) {
-
-        if (!sender.hasPermission(
-                "bedrockantidupe.admin"
-        )) {
-
-            sender.sendMessage(
-                    color("&cNo permission.")
-            );
-
+    @Override public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
+        if (!sender.hasPermission("bedrockantidupe.admin")) {
+            sender.sendMessage(msg("general.no-permission", "&cNo permission."));
             return true;
         }
-
-        if (args.length == 0) {
-            sendHelp(sender);
-            return true;
-        }
-
+        if (args.length == 0) { help(sender); return true; }
         switch (args[0].toLowerCase()) {
-
-            case "reload" -> {
-
-                plugin.reloadConfig();
-
-                sender.sendMessage(
-                        color(
-                                "&a[AntiDupe] Configuration reloaded."
-                        )
-                );
-            }
-
-            case "status" -> {
-
-                sender.sendMessage(
-                        color("&6&lAntiDupe Status")
-                );
-
-                sender.sendMessage(
-                        color(
-                                "&7Plugin: &a"
-                                        + plugin.isEnabled()
-                        )
-                );
-
-                sender.sendMessage(
-                        color(
-                                "&7Detection: &a"
-                                        + plugin.getConfig()
-                                        .getBoolean(
-                                                "detection.enabled",
-                                                true
-                                        )
-                        )
-                );
-
-                sender.sendMessage(
-                        color(
-                                "&7Shop protection: &a"
-                                        + plugin.getConfig()
-                                        .getBoolean(
-                                                "shop.record-context",
-                                                true
-                                        )
-                        )
-                );
-
-                sender.sendMessage(
-                        color(
-                                "&7Economy rollback: &a"
-                                        + plugin
-                                        .getEconomyRollbackManager()
-                                        .isAvailable()
-                        )
-                );
-
-                sender.sendMessage(
-                        color(
-                                "&7Discord webhook: &a"
-                                        + plugin.getConfig()
-                                        .getBoolean(
-                                                "discord.enabled",
-                                                false
-                                        )
-                        )
-                );
-            }
-
+            case "reload" -> { plugin.reloadPlugin(); sender.sendMessage(msg("general.reloaded", "&aConfiguration reloaded.")); }
+            case "status" -> status(sender);
             case "scan" -> {
-
-                if (!(sender instanceof Player player)) {
-
-                    sender.sendMessage(
-                            color(
-                                    "&cThis command must be executed by a player."
-                            )
-                    );
-
-                    return true;
-                }
-
-                sender.sendMessage(
-                        color(
-                                "&e[AntiDupe] Scanning your inventory..."
-                        )
-                );
-
-                plugin.scanPlayerInventory(
-                        player
-                );
-
-                sender.sendMessage(
-                        color(
-                                "&a[AntiDupe] Scan completed."
-                        )
-                );
+                if (!(sender instanceof Player player)) { sender.sendMessage(msg("general.player-only", "&cPlayer only.")); return true; }
+                sender.sendMessage(msg("admin.scan-start", "&eScanning..."));
+                plugin.scanPlayerInventory(player);
+                sender.sendMessage(msg("admin.scan-complete", "&aScan complete."));
             }
-
-            case "cleanup" -> {
-
-                plugin.cleanupCaches();
-
-                sender.sendMessage(
-                        color(
-                                "&a[AntiDupe] Internal caches cleaned."
-                        )
-                );
+            case "cleanup" -> { plugin.cleanupCaches(); sender.sendMessage(color("&a[AntiDupe] Runtime caches cleaned.")); }
+            case "history" -> history(sender);
+            case "debug" -> {
+                sender.sendMessage(color("&7Detection=" + plugin.getConfig().getBoolean("detection.enabled", true)
+                        + " | Shulker=" + plugin.getConfig().getBoolean("shulker.enabled", true)
+                        + " | Vault=" + plugin.getEconomyRollbackManager().isAvailable()));
             }
-
-            default -> sendHelp(sender);
+            default -> help(sender);
         }
-
         return true;
     }
 
-    private void sendHelp(
-            CommandSender sender
-    ) {
-
-        sender.sendMessage(
-                color("&6&lAntiDupe Commands")
-        );
-
-        sender.sendMessage(
-                color(
-                        "&e/antidupe reload &7- Reload config"
-                )
-        );
-
-        sender.sendMessage(
-                color(
-                        "&e/antidupe status &7- Show protection status"
-                )
-        );
-
-        sender.sendMessage(
-                color(
-                        "&e/antidupe scan &7- Scan your inventory"
-                )
-        );
-
-        sender.sendMessage(
-                color(
-                        "&e/antidupe cleanup &7- Clean internal caches"
-                )
-        );
+    private void status(CommandSender sender) {
+        sender.sendMessage(msg("status.header", "&8&m-----------------------------"));
+        sender.sendMessage(msg("status.title", "&b&lBedrockAntiDupe Status"));
+        sender.sendMessage(msg("status.enabled", "&7Status: %status%").replace("%status%", yes(plugin.getConfig().getBoolean("settings.enabled", true))));
+        sender.sendMessage(msg("status.detection", "&7Detection: %detection%").replace("%detection%", yes(plugin.getConfig().getBoolean("detection.enabled", true))));
+        sender.sendMessage(msg("status.shulker", "&7Shulker Protection: %shulker%").replace("%shulker%", yes(plugin.getConfig().getBoolean("shulker.enabled", true))));
+        sender.sendMessage(msg("status.economy", "&7Economy Rollback: %economy%").replace("%economy%", yes(plugin.getEconomyRollbackManager().isAvailable())));
+        sender.sendMessage(msg("status.discord", "&7Discord Webhook: %discord%").replace("%discord%", yes(plugin.getConfig().getBoolean("discord.enabled", false))));
+        sender.sendMessage(msg("status.footer", "&8&m-----------------------------"));
     }
 
-    @Override
-    public List<String> onTabComplete(
-            CommandSender sender,
-            Command command,
-            String alias,
-            String[] args
-    ) {
-
-        if (args.length == 1) {
-
-            List<String> options =
-                    List.of(
-                            "reload",
-                            "status",
-                            "scan",
-                            "cleanup"
-                    );
-
-            String input =
-                    args[0].toLowerCase();
-
-            List<String> result =
-                    new ArrayList<>();
-
-            for (String option : options) {
-
-                if (option.startsWith(input)) {
-                    result.add(option);
-                }
-            }
-
-            return result;
+    private void history(CommandSender sender) {
+        sender.sendMessage(color("&6&lRecent AntiDupe Transactions"));
+        int shown = 0;
+        java.util.List<TransactionLedger.TransactionRecord> records = new java.util.ArrayList<>(plugin.getTransactionLedger().getHistory());
+        records.sort(java.util.Comparator.comparingLong(TransactionLedger.TransactionRecord::timestamp).reversed());
+        for (TransactionLedger.TransactionRecord record : records) {
+            sender.sendMessage(color("&7" + record.timestamp() + " &f" + record.transactionId()
+                    + " &8| &e" + record.source() + " &8| &b+" + record.totalPositiveIncrease()));
+            if (++shown >= 10) break;
         }
-
-        return List.of();
+        if (shown == 0) sender.sendMessage(color("&7No recent transactions."));
     }
 
-    private String color(
-            String message
-    ) {
-
-        return ChatColor.translateAlternateColorCodes(
-                '&',
-                message
-        );
+    private void help(CommandSender sender) {
+        sender.sendMessage(color("&6&lAntiDupe Commands"));
+        sender.sendMessage(color("&e/antidupe reload &7- Reload configuration"));
+        sender.sendMessage(color("&e/antidupe status &7- Protection status"));
+        sender.sendMessage(color("&e/antidupe scan &7- Scan your inventory"));
+        sender.sendMessage(color("&e/antidupe cleanup &7- Clean runtime state"));
+        sender.sendMessage(color("&e/antidupe history &7- Recent transactions"));
+        sender.sendMessage(color("&e/antidupe debug &7- Debug status"));
     }
-        }
+
+    @Override public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
+        if (args.length != 1) return List.of();
+        List<String> options = List.of("reload", "status", "scan", "cleanup", "history", "debug");
+        String input = args[0].toLowerCase();
+        List<String> result = new ArrayList<>();
+        for (String option : options) if (option.startsWith(input)) result.add(option);
+        return result;
+    }
+
+    private String msg(String path, String fallback) {
+        // messages.yml is deliberately loaded from the plugin data folder.
+        // Keep command behavior resilient if the file is missing/corrupt.
+        try {
+            org.bukkit.configuration.file.YamlConfiguration messages = org.bukkit.configuration.file.YamlConfiguration.loadConfiguration(
+                    new java.io.File(plugin.getDataFolder(), "messages.yml"));
+            String value = messages.getString(path, fallback);
+            String prefix = messages.getString("prefix", "");
+            return color((prefix == null ? "" : prefix) + value);
+        } catch (Exception ignored) { return color(fallback); }
+    }
+    private String yes(boolean value) { return color(value ? "&aYES" : "&cNO"); }
+    private String color(String value) { return ChatColor.translateAlternateColorCodes('&', value); }
+}

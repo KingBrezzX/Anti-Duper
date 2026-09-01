@@ -21,17 +21,19 @@ public final class DupeActionManager {
 
     private final BedrockAntiDupe plugin;
     private final DiscordAlertManager discord;
+    private final EvidenceManager evidence;
 
     private final Map<UUID, Long> handledTransactions =
             new ConcurrentHashMap<>();
 
-    public DupeActionManager(
-            BedrockAntiDupe plugin,
-            DiscordAlertManager discord
-    ) {
+    public DupeActionManager(BedrockAntiDupe plugin, DiscordAlertManager discord) {
+        this(plugin, discord, null);
+    }
 
+    public DupeActionManager(BedrockAntiDupe plugin, DiscordAlertManager discord, EvidenceManager evidence) {
         this.plugin = plugin;
         this.discord = discord;
+        this.evidence = evidence;
     }
 
     /**
@@ -49,6 +51,15 @@ public final class DupeActionManager {
         }
 
         if (!result.isConfirmedSuspicious()) {
+            return;
+        }
+
+        // Only transaction sources that have a before-state captured before
+        // the mutation are eligible for automatic removal.
+        if (source == null || (!source.equals("INVENTORY_CLICK")
+                && !source.equals("INVENTORY_DRAG")
+                && !source.equals("INVENTORY_AUTOMATION"))) {
+            plugin.getLogger().warning("[AntiDupe] Confirmed-looking transaction ignored for automatic removal: source=" + source);
             return;
         }
 
@@ -72,6 +83,16 @@ public final class DupeActionManager {
         ) != null) {
 
             return;
+        }
+
+        if (evidence != null) {
+            java.util.Map<org.bukkit.Material, Integer> increases = new java.util.EnumMap<>(org.bukkit.Material.class);
+            for (DupeDetector.Change change : result.changes()) {
+                if (change.material() != null && change.increase() > 0) {
+                    increases.merge(change.material(), change.increase(), Integer::sum);
+                }
+            }
+            evidence.record(player, result.reason(), increases);
         }
 
         int removed =
@@ -113,6 +134,15 @@ public final class DupeActionManager {
                         + " | removed="
                         + removed
         );
+
+        if (plugin.getConfig().getBoolean("actions.staff-notification", true)) {
+            String staffMessage = "§c[AntiDupe] §4CONFIRMED DUPE §7player=§f" + player.getName()
+                    + " §7amount=§f" + result.totalIncrease()
+                    + " §7source=§f" + source;
+            for (Player online : plugin.getServer().getOnlinePlayers()) {
+                if (online.hasPermission("bedrockantidupe.notify")) online.sendMessage(staffMessage);
+            }
+        }
     }
 
     /**
