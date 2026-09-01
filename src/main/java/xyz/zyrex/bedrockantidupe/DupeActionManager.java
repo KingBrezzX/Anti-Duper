@@ -22,6 +22,7 @@ public final class DupeActionManager {
     private final BedrockAntiDupe plugin;
     private final DiscordAlertManager discord;
     private final EvidenceManager evidence;
+    private final EconomyRollbackManager economyRollback;
 
     private final Map<UUID, Long> handledTransactions =
             new ConcurrentHashMap<>();
@@ -43,6 +44,15 @@ public final class DupeActionManager {
             Player player,
             DupeDetector.DetectionResult result,
             String source
+    ) {
+        handleConfirmedDupe(player, result, source, null);
+    }
+
+    public void handleConfirmedDupe(
+            Player player,
+            DupeDetector.DetectionResult result,
+            String source,
+            EconomyTransaction economyTransaction
     ) {
 
         if (player == null
@@ -95,11 +105,24 @@ public final class DupeActionManager {
             evidence.record(player, result.reason(), increases);
         }
 
-        int removed =
-                removeConfirmedItems(
-                        player,
-                        result
-                );
+        if (plugin.getConfig().getBoolean("actions.remove-confirmed-items", false)
+                && plugin.getTransactionJournal() != null
+                && !plugin.getTransactionJournal().appendSync(transaction)) {
+            handledTransactions.remove(transactionId);
+            plugin.getLogger().severe("[AntiDupe] Destructive action refused: transaction journal could not be durably committed.");
+            return;
+        }
+
+        int removed = removeConfirmedItems(player, result);
+        if (plugin.getConfig().getBoolean("actions.remove-confirmed-items", false) && removed == 0) {
+            handledTransactions.remove(transactionId);
+        }
+        if (economyTransaction != null && economyRollback != null
+                && plugin.getConfig().getBoolean("economy.rollback-confirmed-sales", true)
+                && economyTransaction.transactionId().equals(transactionId)
+                && economyTransaction.isValidRollbackTransaction()) {
+            economyRollback.rollbackConfirmedDupeSale(economyTransaction);
+        }
 
         String action =
                 "CONFIRMED DUPE: removed "
@@ -154,33 +177,53 @@ public final class DupeActionManager {
     private int removeConfirmedItems(Player player, DupeDetector.DetectionResult result) {
         if (!plugin.getConfig().getBoolean("actions.remove-confirmed-items", false)) return 0;
         if (result.transaction() == null) return 0;
-        int totalRemoved = 0;
-        java.util.List<ItemStack> removedItems = new java.util.ArrayList<>();
+        if (!plugin.getConfig().getBoolean("recovery.enabled", true)
+                || !plugin.getConfig().getBoolean("recovery.require-backup-before-removal", true)) {
+            plugin.getLogger().warning("[AntiDupe] Destructive removal refused: durable recovery protection is required.");
+            return 0;
+        }
+
+        java.util.List<PlannedRemoval> plan = new java.util.ArrayList<>();
         java.util.Set<String> tracked = new java.util.HashSet<>();
         for (DupeDetector.Change c : result.changes()) if (c.material() != null) tracked.add(c.material().name());
+
+        // Revalidate every slot against the exact post-state captured by the transaction.
+        // If another plugin/player changed any affected slot, abort the entire removal.
         for (TransactionLedger.ItemChange change : result.transaction().changes()) {
             ItemStack after = change.after();
             if (after == null || after.getType().isAir() || !tracked.contains(after.getType().name())) continue;
             int delta = change.amountDelta();
             if (delta <= 0) continue;
-            int remove = Math.min(delta, after.getAmount());
-            ItemStack removed = after.clone(); removed.setAmount(remove); removedItems.add(removed);
-            int slot = change.slot();
-            ItemStack current = player.getInventory().getItem(slot);
-            if (current == null || current.getType() != after.getType()) continue;
-            int safeRemove = Math.min(remove, current.getAmount());
-            current.setAmount(current.getAmount() - safeRemove);
-            player.getInventory().setItem(slot, current.getAmount() <= 0 ? null : current);
-            totalRemoved += safeRemove;
-        }
-        if (!removedItems.isEmpty() && plugin.getRecoveryManager() != null) {
-            if (!plugin.getRecoveryManager().backupSync(player.getUniqueId(), result.transaction().transactionId(), removedItems, result.reason())) {
-                plugin.getLogger().severe("[AntiDupe] Refusing destructive action: recovery backup was not durably written.");
+            ItemStack current = player.getInventory().getItem(change.slot());
+            if (current == null || current.getType() != after.getType() || !current.isSimilar(after) || current.getAmount() < delta) {
+                plugin.getLogger().warning("[AntiDupe] Removal aborted: affected inventory slot changed after detection.");
                 return 0;
             }
+            ItemStack removed = after.clone();
+            removed.setAmount(delta);
+            plan.add(new PlannedRemoval(change.slot(), delta, removed));
+        }
+        if (plan.isEmpty()) return 0;
+
+        java.util.List<ItemStack> backup = plan.stream().map(PlannedRemoval::item).toList();
+        UUID transactionId = result.transaction().transactionId();
+        if (!plugin.getRecoveryManager().backupSync(player.getUniqueId(), transactionId, backup, result.reason())) {
+            plugin.getLogger().severe("[AntiDupe] Removal aborted: recovery backup could not be durably written.");
+            return 0;
+        }
+
+        int totalRemoved = 0;
+        for (PlannedRemoval p : plan) {
+            ItemStack current = player.getInventory().getItem(p.slot());
+            int newAmount = current.getAmount() - p.amount();
+            ItemStack replacement = current.clone(); replacement.setAmount(newAmount);
+            player.getInventory().setItem(p.slot(), newAmount <= 0 ? null : replacement);
+            totalRemoved += p.amount();
         }
         return totalRemoved;
     }
+
+    private record PlannedRemoval(int slot, int amount, ItemStack item) {}
 
     /**
      * Removes a specific material from the player's inventory.

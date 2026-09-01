@@ -22,9 +22,9 @@ public final class AntiDupeCommand implements CommandExecutor, TabCompleter {
             case "status" -> status(sender);
             case "scan" -> {
                 if (args.length > 1 && args[1].equalsIgnoreCase("loaded")) {
-                    sender.sendMessage(msg("admin.scan-start", "&eScanning loaded containers..."));
-                    int findings = plugin.scanLoadedInventories();
-                    sender.sendMessage(color("&aScan complete. &7Findings: &f" + findings));
+                    sender.sendMessage(msg("admin.scan-start", "&eLoaded-container scan queued without loading chunks."));
+                    if (plugin.getLoadedContainerScanner() != null) plugin.getLoadedContainerScanner().trigger();
+                    sender.sendMessage(color("&aScan queued. &7It is processed incrementally to protect TPS."));
                 } else {
                     if (!(sender instanceof Player player)) { sender.sendMessage(msg("general.player-only", "&cPlayer only.")); return true; }
                     sender.sendMessage(msg("admin.scan-start", "&eScanning..."));
@@ -48,7 +48,9 @@ public final class AntiDupeCommand implements CommandExecutor, TabCompleter {
             case "debug" -> {
                 sender.sendMessage(color("&7Detection=" + plugin.getConfig().getBoolean("detection.enabled", true)
                         + " | Shulker=" + plugin.getConfig().getBoolean("shulker.enabled", true)
-                        + " | Vault=" + plugin.getEconomyRollbackManager().isAvailable()));
+                        + " | Vault=" + plugin.getEconomyRollbackManager().isAvailable()
+                        + " | SQLite=" + (plugin.getDatabaseManager() != null && plugin.getDatabaseManager().isAvailable())
+                        + " | Journal=" + plugin.getConfig().getBoolean("journal.enabled", true)));
             }
             default -> help(sender);
         }

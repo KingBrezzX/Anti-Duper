@@ -27,9 +27,13 @@ public final class TransactionLedger {
         UUID id = player.getUniqueId();
         long tick = plugin.getServer().getCurrentTick();
         ConcurrentLinkedDeque<TransactionSnapshot> queue = active.computeIfAbsent(id, k -> new ConcurrentLinkedDeque<>());
+        long burst = Math.max(0L, plugin.getConfig().getLong("protection.burst-window-ms", 75L));
+        long now = System.currentTimeMillis();
         for (TransactionSnapshot existing : queue) {
-            if (existing.tick() == tick) return existing;
+            if (now - existing.timestamp() <= burst) return existing;
         }
+        int maxPending = Math.max(1, plugin.getConfig().getInt("protection.max-pending-transactions", 64));
+        while (queue.size() >= maxPending) queue.pollFirst();
         TransactionSnapshot snapshot = new TransactionSnapshot(
                 UUID.randomUUID(), id, source == null ? "UNKNOWN" : source,
                 snapshotInventory(player.getInventory()), snapshotInventory(viewedInventory),

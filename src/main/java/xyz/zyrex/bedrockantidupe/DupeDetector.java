@@ -25,30 +25,47 @@ public final class DupeDetector {
     }
     public DetectionResult inspect(TransactionLedger.TransactionRecord record){
         if(record==null)return DetectionResult.clean("No transaction.");
-        if(!plugin.getConfig().getBoolean("settings.enabled",true)||!plugin.getConfig().getBoolean("detection.enabled",true))return DetectionResult.clean("Detection disabled.");
-        List<Change> suspicious=new ArrayList<>();
-        int threshold=Math.max(1,plugin.getConfig().getInt("detection.instant-increase-threshold",1));
-        for(Material m:trackedMaterials){
-            int net=record.netDelta(m), playerDelta=record.playerDelta(m);
-            if(net<=0||playerDelta<=0)continue;
-            int amount=Math.min(net,playerDelta); if(amount<=0)continue;
-            suspicious.add(new Change(-1,m,amount,net>=threshold?"CONSERVATION_BREAK":"NET_POSITIVE"));
+        // Crafting/smithing legitimately transform one item type into another.
+        // They are still journaled, but are not treated as conservation violations
+        // unless a future recipe-aware detector explicitly proves an anomaly.
+        if (record.source().equals("CRAFT") || record.source().equals("SMITHING")) {
+            DetectionResult clean = DetectionResult.clean("Recipe transformation observed; conservation heuristic skipped.");
+            if(plugin.getDatabaseManager()!=null) plugin.getDatabaseManager().record(record, clean);
+            return clean;
         }
-        int shulkerStacks=record.duplicatedShulkerStacks();
-        if(suspicious.isEmpty() && shulkerStacks<=0)return DetectionResult.clean("Inventory conservation preserved.");
-        boolean confirmed=false;
-        if(shulkerStacks>0) confirmed=true;
-        if(plugin.getConfig().getBoolean("settings.require-confirmation",true)){
-            long window=Math.max(25L,plugin.getConfig().getLong("protection.burst-window-ms",75L));
-            for(Change c:suspicious){
-                String key=record.playerId()+"|"+c.material()+"|"+c.increase();
-                Long previous=recentSignals.put(key,System.currentTimeMillis());
-                if(previous!=null&&System.currentTimeMillis()-previous<=window)confirmed=true;
+        DetectionResult result;
+        if(!plugin.getConfig().getBoolean("settings.enabled",true)||!plugin.getConfig().getBoolean("detection.enabled",true)) {
+            result=DetectionResult.clean("Detection disabled.");
+        } else {
+            List<Change> suspicious=new ArrayList<>();
+            int threshold=Math.max(1,plugin.getConfig().getInt("detection.instant-increase-threshold",1));
+            for(Material m:trackedMaterials){
+                int net=record.netDelta(m), playerDelta=record.playerDelta(m);
+                if(net<=0||playerDelta<=0)continue;
+                int amount=Math.min(net,playerDelta); if(amount<=0)continue;
+                suspicious.add(new Change(-1,m,amount,net>=threshold?"CONSERVATION_BREAK":"NET_POSITIVE"));
             }
-        } else confirmed=!suspicious.isEmpty();
-        return new DetectionResult(true,confirmed,record,suspicious,
-                confirmed?"Repeated or fingerprinted conservation anomaly confirmed.":"Conservation anomaly observed; awaiting independent confirmation.");
+            int shulkerStacks=record.duplicatedShulkerStacks();
+            if(suspicious.isEmpty() && shulkerStacks<=0) result=DetectionResult.clean("Inventory conservation preserved.");
+            else {
+                boolean confirmed=false;
+                if(shulkerStacks>0) confirmed=true;
+                if(plugin.getConfig().getBoolean("settings.require-confirmation",true)){
+                    long window=Math.max(25L,plugin.getConfig().getLong("protection.burst-window-ms",75L));
+                    for(Change c:suspicious){
+                        String key=record.playerId()+"|"+c.material()+"|"+c.increase();
+                        Long previous=recentSignals.put(key,System.currentTimeMillis());
+                        if(previous!=null&&System.currentTimeMillis()-previous<=window)confirmed=true;
+                    }
+                } else confirmed=!suspicious.isEmpty();
+                result=new DetectionResult(true,confirmed,record,suspicious,
+                        confirmed?"Repeated or fingerprinted conservation anomaly confirmed.":"Conservation anomaly observed; awaiting independent confirmation.");
+            }
+        }
+        if(plugin.getDatabaseManager()!=null) plugin.getDatabaseManager().record(record,result);
+        return result;
     }
+
     public boolean isShulker(ItemStack item){return item!=null&&isShulker(item.getType());}
     public boolean isShulker(Material m){return m!=null&&m.name().endsWith("_SHULKER_BOX");}
     public Set<Material> getTrackedMaterials(){return Collections.unmodifiableSet(trackedMaterials);}

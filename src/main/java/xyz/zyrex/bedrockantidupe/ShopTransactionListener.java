@@ -162,11 +162,9 @@ public final class ShopTransactionListener implements Listener {
                 transaction.transactionId()
                         .toString();
 
+        if (plugin.getDatabaseManager() != null) plugin.getDatabaseManager().recordEconomy(transaction);
         plugin.getLogger().fine(
-                "Registered economy transaction "
-                        + key
-                        + " for "
-                        + transaction.playerId()
+                "Registered economy transaction " + key + " for " + transaction.playerId()
         );
     }
 

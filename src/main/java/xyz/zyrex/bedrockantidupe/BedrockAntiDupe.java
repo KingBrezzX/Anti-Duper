@@ -21,25 +21,31 @@ public final class BedrockAntiDupe extends JavaPlugin {
     private TransactionJournal transactionJournal;
     private NativeExploitPreventionListener nativePreventionListener;
     private PlayerStateListener playerStateListener;
+    private DatabaseManager databaseManager;
     private BukkitTask maintenanceTask;
+    private LoadedContainerScanner loadedContainerScanner;
 
     @Override
     public void onEnable() {
         saveDefaultConfig();
         saveResource("messages.yml", false);
+        validateConfiguration();
 
         transactionLedger = new TransactionLedger(this);
         discordAlertManager = new DiscordAlertManager(this);
         evidenceManager = new EvidenceManager(this);
         dupeDetector = new DupeDetector(this, transactionLedger);
-        dupeActionManager = new DupeActionManager(this, discordAlertManager, evidenceManager);
         economyRollbackManager = new EconomyRollbackManager(this, discordAlertManager);
+        dupeActionManager = new DupeActionManager(this, discordAlertManager, evidenceManager, economyRollbackManager);
         exploitProtectionListener = new ExploitProtectionListener(this, transactionLedger, dupeDetector, dupeActionManager);
         shopTransactionListener = new ShopTransactionListener(this, transactionLedger);
         recoveryManager = new RecoveryManager(this);
         transactionJournal = new TransactionJournal(this);
+        databaseManager = new DatabaseManager(this);
         nativePreventionListener = new NativeExploitPreventionListener(this);
         playerStateListener = new PlayerStateListener(this);
+        loadedContainerScanner = new LoadedContainerScanner(this);
+        loadedContainerScanner.start();
 
         Bukkit.getPluginManager().registerEvents(exploitProtectionListener, this);
         Bukkit.getPluginManager().registerEvents(shopTransactionListener, this);
@@ -48,16 +54,18 @@ public final class BedrockAntiDupe extends JavaPlugin {
         registerCommands();
         startMaintenanceTask();
 
-        getLogger().info("BedrockAntiDupe 2.5.0 enabled | Paper 26.2 | Java 25");
+        getLogger().info("BedrockAntiDupe 2.6.0 enabled | Paper 26.2 | Java 25");
         getLogger().info("Detection: " + getConfig().getBoolean("detection.enabled", true));
         getLogger().info("Shulker protection: " + getConfig().getBoolean("shulker.enabled", true));
         getLogger().info("Vault economy: " + economyRollbackManager.isAvailable());
         getLogger().info("Discord webhook: " + getConfig().getBoolean("discord.enabled", false));
+        getLogger().info("SQLite database: " + (databaseManager != null && databaseManager.isAvailable()));
     }
 
     @Override
     public void onDisable() {
         if (maintenanceTask != null) maintenanceTask.cancel();
+        if (loadedContainerScanner != null) loadedContainerScanner.stop();
         if (exploitProtectionListener != null) exploitProtectionListener.clear();
         if (shopTransactionListener != null) shopTransactionListener.clearAll();
         if (dupeActionManager != null) dupeActionManager.clear();
@@ -65,6 +73,7 @@ public final class BedrockAntiDupe extends JavaPlugin {
         if (economyRollbackManager != null) economyRollbackManager.clear();
         if (discordAlertManager != null) discordAlertManager.cleanup();
         if (transactionJournal != null) transactionJournal.close();
+        if (databaseManager != null) databaseManager.close();
         getLogger().info("BedrockAntiDupe disabled.");
     }
 
@@ -92,26 +101,47 @@ public final class BedrockAntiDupe extends JavaPlugin {
         if (dupeActionManager != null) dupeActionManager.cleanup(maxAge);
         if (dupeDetector != null) dupeDetector.cleanup(maxAge);
         if (economyRollbackManager != null) economyRollbackManager.cleanup(maxAge);
+        if (databaseManager != null) databaseManager.cleanup(maxAge);
     }
 
     public void reloadPlugin() {
         reloadConfig();
+        validateConfiguration();
         if (dupeDetector != null) dupeDetector.reload();
+        if (loadedContainerScanner != null) loadedContainerScanner.start();
+        if (transactionJournal != null) transactionJournal.close();
+        transactionJournal = new TransactionJournal(this);
+        if (databaseManager != null) databaseManager.close();
+        databaseManager = new DatabaseManager(this);
         getLogger().info("Configuration reloaded.");
+    }
+
+    private void validateConfiguration() {
+        if (getConfig().getBoolean("actions.remove-confirmed-items", false) && getConfig().getBoolean("recovery.require-backup-before-removal", true) && !getConfig().getBoolean("recovery.enabled", true)) {
+            getLogger().warning("[AntiDupe] Automatic removal requested but recovery is disabled; forcing removal OFF for safety.");
+            getConfig().set("actions.remove-confirmed-items", false);
+            saveConfig();
+        }
+        if (getConfig().getInt("protection.max-pending-transactions", 64) < 1) {
+            getConfig().set("protection.max-pending-transactions", 64);
+            saveConfig();
+        }
     }
 
     public int scanPlayerInventory(Player player) {
         if (player == null || !player.isOnline()) return 0;
-        Map<org.bukkit.Material, Integer> totals = new java.util.EnumMap<>(org.bukkit.Material.class);
-        for (var item : player.getInventory().getContents()) {
-            if (item == null || item.getType().isAir() || !dupeDetector.getTrackedMaterials().contains(item.getType())) continue;
-            totals.merge(item.getType(), item.getAmount(), Integer::sum);
-        }
         int findings = 0;
-        for (var e : totals.entrySet()) {
-            if (e.getValue() > e.getKey().getMaxStackSize() * 36) findings++;
+        for (var item : player.getInventory().getContents()) {
+            if (item == null || item.getType().isAir()) continue;
+            if (item.getAmount() > item.getMaxStackSize()) {
+                findings++;
+                getLogger().warning("[AntiDupe] Impossible player stack: " + player.getName() + " " + item.getType() + " x" + item.getAmount());
+            }
+            if (getConfig().getBoolean("protection.nested-shulker", true) && dupeDetector.isShulker(item) && containsNestedShulker(item)) {
+                findings++;
+                getLogger().warning("[AntiDupe] Nested shulker detected in player inventory: " + player.getName());
+            }
         }
-        getLogger().info("Inventory scan for " + player.getName() + ": " + totals);
         return findings;
     }
 
@@ -135,6 +165,15 @@ public final class BedrockAntiDupe extends JavaPlugin {
         return findings;
     }
 
+    private boolean containsNestedShulker(org.bukkit.inventory.ItemStack shulker) {
+        try {
+            org.bukkit.inventory.meta.BlockStateMeta meta = shulker.getItemMeta() instanceof org.bukkit.inventory.meta.BlockStateMeta b ? b : null;
+            if (meta == null || !(meta.getBlockState() instanceof org.bukkit.block.ShulkerBox box)) return false;
+            for (var item : box.getInventory().getContents()) if (dupeDetector.isShulker(item)) return true;
+        } catch (RuntimeException ignored) { }
+        return false;
+    }
+
     public TransactionLedger getTransactionLedger() { return transactionLedger; }
     public DupeDetector getDupeDetector() { return dupeDetector; }
     public DiscordAlertManager getDiscordAlertManager() { return discordAlertManager; }
@@ -147,4 +186,6 @@ public final class BedrockAntiDupe extends JavaPlugin {
     public TransactionJournal getTransactionJournal() { return transactionJournal; }
     public NativeExploitPreventionListener getNativePreventionListener() { return nativePreventionListener; }
     public PlayerStateListener getPlayerStateListener() { return playerStateListener; }
+    public DatabaseManager getDatabaseManager() { return databaseManager; }
+    public LoadedContainerScanner getLoadedContainerScanner() { return loadedContainerScanner; }
 }
