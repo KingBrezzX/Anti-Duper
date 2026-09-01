@@ -1,4 +1,4 @@
-# Release Audit — 2.7.3
+# Release Audit — 2.7.4
 
 ## Verified in source
 - Paper API target: 26.2 build 121 stable.
@@ -33,7 +33,7 @@ Status: RELEASE CANDIDATE. Automated gates may be green, but real-client exploit
 
 A public release should additionally be staged on the exact Paper 26.2 build used by the server with a backup and representative plugin stack. Never advertise “100% dupe-proof”; anti-dupe software can reduce known exploit classes but cannot guarantee against unknown future server/client/plugin bugs.
 
-## 2.7.3 hardening
+## 2.7.4 hardening
 - Destructive recovery is slot-aware and refuses ambiguous/mixed inventory state.
 - Recovery uses versioned `.recovery`, `.restoring`, and `.restored` states.
 - Third-party shops can provide exact transaction identity/result instead of relying on GUI titles.
@@ -43,7 +43,7 @@ A public release should additionally be staged on the exact Paper 26.2 build use
 Real exploit/client regression still requires a real player-connected staging server; no headless CI test is represented as equivalent to that.
 
 
-## 2.7.3 transaction-correlation hardening
+## 2.7.4 transaction-correlation hardening
 - Transactions within the burst window are reused only when source and viewed-container identity match.
 - Shutdown flush preserves the currently open top inventory when it matches the transaction snapshot.
 - Reconciliations are scheduled per transaction instead of one task per player, preventing later transactions from being stranded.

@@ -1,4 +1,4 @@
-# BedrockAntiDupe 2.7.3
+# BedrockAntiDupe 2.7.4
 
 Production-focused inventory integrity and anti-duplication protection for **Paper 26.2 / Java 25**.
 
