@@ -30,11 +30,6 @@ public final class BedrockAntiDupe extends JavaPlugin {
         saveDefaultConfig();
         saveResource("messages.yml", false);
         validateConfiguration();
-        if (!PaperRuntimeSelfTest.run(this)) {
-            getLogger().severe("[AntiDupe] Paper runtime self-test failed; refusing to start.");
-            getServer().getPluginManager().disablePlugin(this);
-            return;
-        }
 
         transactionLedger = new TransactionLedger(this);
         discordAlertManager = new DiscordAlertManager(this);
@@ -121,7 +116,7 @@ public final class BedrockAntiDupe extends JavaPlugin {
         reloadConfig();
         validateConfiguration();
         if (dupeDetector != null) dupeDetector.reload();
-        if (loadedContainerScanner != null) { loadedContainerScanner.stop(); loadedContainerScanner.start(); }
+        if (loadedContainerScanner != null) loadedContainerScanner.start();
         if (transactionJournal != null) transactionJournal.close();
         transactionJournal = new TransactionJournal(this);
         if (databaseManager != null) databaseManager.close();
