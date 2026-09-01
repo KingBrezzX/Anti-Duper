@@ -41,7 +41,7 @@ jobs:
       - name: Verify release JAR
         shell: bash
         run: |
-          JAR="target/BedrockAntiDupe-2.7.3.jar"
+          JAR="target/BedrockAntiDupe-2.7.4.jar"
           test -f "$JAR"
           jar tf "$JAR" | grep -q '^plugin.yml$'
           jar tf "$JAR" | grep -q 'xyz/zyrex/bedrockantidupe/BedrockAntiDupe.class'
@@ -56,20 +56,21 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p smoke/plugins
-          cp target/BedrockAntiDupe-2.7.3.jar smoke/plugins/
+          cp target/BedrockAntiDupe-2.7.4.jar smoke/plugins/
           printf 'eula=true\n' > smoke/eula.txt
           curl -fsSL -o smoke/paper.jar "https://api.papermc.io/v2/projects/paper/versions/26.2/builds/121/downloads/paper-26.2-121.jar"
           printf 'antidupe status\nstop\n' | timeout 120s java -Xms512M -Xmx1G -jar smoke/paper.jar --nogui > smoke/server.log 2>&1 || true
           cat smoke/server.log
-          grep -q "BedrockAntiDupe 2.7.3 enabled" smoke/server.log
+          grep -q "BedrockAntiDupe 2.7.4 enabled" smoke/server.log
+          grep -q "Paper runtime self-test: PASS" smoke/server.log
           grep -q "SQLite database: true" smoke/server.log
           ! grep -qE "Could not load|Error occurred while enabling BedrockAntiDupe|Exception.*BedrockAntiDupe" smoke/server.log
           grep -q "BedrockAntiDupe" smoke/server.log
-          test -f smoke/plugins/BedrockAntiDupe-2.7.3.jar
+          test -f smoke/plugins/BedrockAntiDupe-2.7.4.jar
 
       - name: Upload JAR
         uses: actions/upload-artifact@v4
         with:
-          name: BedrockAntiDupe-2.7.3
-          path: target/BedrockAntiDupe-2.7.3.jar
+          name: BedrockAntiDupe-2.7.4
+          path: target/BedrockAntiDupe-2.7.4.jar
           if-no-files-found: error
