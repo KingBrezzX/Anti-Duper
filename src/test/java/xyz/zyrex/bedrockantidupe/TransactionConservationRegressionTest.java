@@ -47,4 +47,3 @@ class TransactionConservationRegressionTest {
         assertNotEquals(ItemFingerprint.sha256(a), ItemFingerprint.sha256(b));
     }
 }
-
