@@ -2,13 +2,9 @@ name: Build BedrockAntiDupe
 
 on:
   push:
-    branches:
-      - main
-      - master
+    branches: [ main, master ]
   pull_request:
-    branches:
-      - main
-      - master
+    branches: [ main, master ]
   workflow_dispatch:
 
 permissions:
@@ -16,49 +12,38 @@ permissions:
 
 jobs:
   build:
-    name: Build with Java 25
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
-      - name: Setup Java 25
+      - name: Set up JDK 25
         uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '25'
           cache: maven
 
-      - name: Show Java version
+      - name: Verify Java
         run: java -version
 
-      - name: Build with Maven
-        run: mvn -B clean package
+      - name: Build and verify
+        run: mvn -B -U clean verify
 
-      - name: Verify JAR
+      - name: Verify release JAR
         shell: bash
         run: |
-          set -e
-
-          echo "Checking target directory..."
-          ls -lah target || true
-
-          JAR="$(find target -maxdepth 1 -type f -name '*.jar' ! -name 'original-*.jar' | head -n 1)"
-
-          if [ -z "$JAR" ]; then
-            echo "ERROR: No JAR was generated."
-            exit 1
-          fi
-
-          echo "JAR generated successfully:"
-          echo "$JAR"
-
+          JAR="target/BedrockAntiDupe-2.6.0.jar"
           test -f "$JAR"
+          jar tf "$JAR" | grep -q '^plugin.yml$'
+          jar tf "$JAR" | grep -q 'xyz/zyrex/bedrockantidupe/BedrockAntiDupe.class'
+          MAJOR=$(javap -verbose -classpath "$JAR" xyz.zyrex.bedrockantidupe.BedrockAntiDupe | awk '/major version/ {print $3; exit}')
+          test "$MAJOR" = "69"
+          echo "Release JAR verified: Java class major 69 (Java 25)"
 
-      - name: Upload plugin JAR
+      - name: Upload JAR
         uses: actions/upload-artifact@v4
         with:
-          name: BedrockAntiDupe-2.0.0
-          path: target/*.jar
+          name: BedrockAntiDupe-2.6.0
+          path: target/BedrockAntiDupe-2.6.0.jar
           if-no-files-found: error
