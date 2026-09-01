@@ -371,7 +371,25 @@ jobs:
             exit 1
           fi
 
-          echo "BedrockAntiDupe successfully loaded on Paper 26.2."
+          if ! grep -Fq "Paper runtime self-test: PASS" "$LOG"; then
+            echo "ERROR: Paper runtime self-test did not pass."
+            cat "$LOG"
+            exit 1
+          fi
+
+          if grep -Fq "Failed to register events for class xyz.zyrex.bedrockantidupe.ExploitProtectionListener" "$LOG"; then
+            echo "ERROR: Core listener registration failed."
+            cat "$LOG"
+            exit 1
+          fi
+
+          if grep -Fq "because net/milkbowl/vault/economy/Economy does not exist" "$LOG"; then
+            echo "ERROR: Optional Vault integration leaked into core listener loading."
+            cat "$LOG"
+            exit 1
+          fi
+
+          echo "BedrockAntiDupe successfully loaded on Paper 26.2 with optional Vault absent."
 
       - name: Stop Paper cleanly
         if: always()
