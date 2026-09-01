@@ -1,4 +1,4 @@
-# BedrockAntiDupe 2.1.0 | Paper 26.2
+# BedrockAntiDupe 2.3.0 | Paper 26.2
 settings:
   enabled: true
   require-confirmation: true
@@ -27,7 +27,7 @@ shulker:
   protect-contents: true
 
 actions:
-  remove-confirmed-items: true
+  remove-confirmed-items: false
   clear-entire-inventory: false
   console-log: true
   staff-notification: true
@@ -82,3 +82,25 @@ safety:
   bypass-permission: bedrockantidupe.bypass
   require-transaction: true
   require-economy-transaction: true
+
+# Premium protection modules
+protection:
+  creative-events: false
+  nested-shulker: true
+  suspicious-container-movement: true
+  burst-window-ms: 75
+  max-pending-transactions: 64
+  trusted-inventory-titles: []
+  trusted-plugins: []
+  loaded-container-scan: true
+  scan-interval-seconds: 120
+recovery:
+  enabled: true
+  directory: evidence
+  require-backup-before-removal: true
+  max-records: 10000
+fingerprint:
+  enabled: true
+  shulker-contents: true
+  books: true
+  custom-items: true
