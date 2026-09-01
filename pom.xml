@@ -4,7 +4,7 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>xyz.zyrex</groupId>
     <artifactId>BedrockAntiDupe</artifactId>
-    <version>2.5.0</version>
+    <version>2.6.0</version>
     <packaging>jar</packaging>
     <name>BedrockAntiDupe</name>
     <description>Production anti-duplication protection for Paper 26.2.</description>
@@ -29,6 +29,11 @@
             <version>1.7.1</version>
             <scope>provided</scope>
         </dependency>
+        <dependency>
+            <groupId>org.xerial</groupId>
+            <artifactId>sqlite-jdbc</artifactId>
+            <version>3.53.4.0</version>
+        </dependency>
     </dependencies>
     <build>
         <finalName>BedrockAntiDupe-${project.version}</finalName>
@@ -44,6 +49,22 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId><artifactId>maven-jar-plugin</artifactId><version>3.4.2</version>
                 <configuration><archive><manifest><addDefaultImplementationEntries>true</addDefaultImplementationEntries></manifest></archive></configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-shade-plugin</artifactId>
+                <version>3.6.0</version>
+                <executions>
+                    <execution>
+                        <phase>package</phase>
+                        <goals><goal>shade</goal></goals>
+                        <configuration>
+                            <createDependencyReducedPom>false</createDependencyReducedPom>
+                            <shadedArtifactAttached>false</shadedArtifactAttached>
+                            <artifactSet><includes><include>org.xerial:sqlite-jdbc</include></includes></artifactSet>
+                        </configuration>
+                    </execution>
+                </executions>
             </plugin>
         </plugins>
     </build>
