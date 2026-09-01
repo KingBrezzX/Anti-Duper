@@ -1,0 +1,39 @@
+name: Runtime Staging Gates
+
+on:
+  workflow_dispatch:
+    inputs:
+      staging_host:
+        description: 'Disposable staging host (SSH)'
+        required: true
+        type: string
+      staging_port:
+        description: 'SSH port'
+        required: false
+        default: '22'
+        type: string
+      shop_name:
+        description: 'Exact third-party shop plugin being tested'
+        required: false
+        default: 'NONE'
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v5
+      - name: Runtime gate policy
+        run: |
+          echo "Paper 26.2 / Java 25 runtime gate prepared."
+          echo "Shop target: ${{ inputs.shop_name }}"
+          echo "A real-player client test and a disposable staging server are mandatory."
+      - name: Publish gate instructions
+        run: |
+          cat scripts/player-regression.md
+          cat scripts/shop-compatibility.md
+          cat scripts/power-loss-smoke.sh

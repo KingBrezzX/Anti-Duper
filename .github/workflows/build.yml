@@ -30,10 +30,18 @@ jobs:
       - name: Build and verify
         run: mvn -B -U clean verify
 
+      - name: Verify tests executed
+        shell: bash
+        run: |
+          test -d target/surefire-reports
+          TESTS=$(grep -Rho 'tests="[^"]*"' target/surefire-reports/*.xml 2>/dev/null | sed 's/[^0-9]//g' | awk '{s+=$1} END {print s+0}')
+          test "${TESTS:-0}" -gt 0
+          echo "Automated tests executed: $TESTS"
+
       - name: Verify release JAR
         shell: bash
         run: |
-          JAR="target/BedrockAntiDupe-2.7.0.jar"
+          JAR="target/BedrockAntiDupe-2.7.3.jar"
           test -f "$JAR"
           jar tf "$JAR" | grep -q '^plugin.yml$'
           jar tf "$JAR" | grep -q 'xyz/zyrex/bedrockantidupe/BedrockAntiDupe.class'
@@ -41,9 +49,27 @@ jobs:
           test "$MAJOR" = "69"
           echo "Release JAR verified: Java class major 69 (Java 25)"
 
+
+
+      - name: Paper 26.2 runtime smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p smoke/plugins
+          cp target/BedrockAntiDupe-2.7.3.jar smoke/plugins/
+          printf 'eula=true\n' > smoke/eula.txt
+          curl -fsSL -o smoke/paper.jar "https://api.papermc.io/v2/projects/paper/versions/26.2/builds/121/downloads/paper-26.2-121.jar"
+          printf 'antidupe status\nstop\n' | timeout 120s java -Xms512M -Xmx1G -jar smoke/paper.jar --nogui > smoke/server.log 2>&1 || true
+          cat smoke/server.log
+          grep -q "BedrockAntiDupe 2.7.3 enabled" smoke/server.log
+          grep -q "SQLite database: true" smoke/server.log
+          ! grep -qE "Could not load|Error occurred while enabling BedrockAntiDupe|Exception.*BedrockAntiDupe" smoke/server.log
+          grep -q "BedrockAntiDupe" smoke/server.log
+          test -f smoke/plugins/BedrockAntiDupe-2.7.3.jar
+
       - name: Upload JAR
         uses: actions/upload-artifact@v4
         with:
-          name: BedrockAntiDupe-2.7.0
-          path: target/BedrockAntiDupe-2.7.0.jar
+          name: BedrockAntiDupe-2.7.3
+          path: target/BedrockAntiDupe-2.7.3.jar
           if-no-files-found: error
