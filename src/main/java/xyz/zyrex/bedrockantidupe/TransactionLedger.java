@@ -145,7 +145,7 @@ public final class TransactionLedger {
         }
         public int totalPositiveIncrease() { return changes.stream().mapToInt(ItemChange::amountDelta).filter(i->i>0).sum(); }
         public boolean hasPositiveIncrease() { return totalPositiveIncrease()>0; }
-        public int netDelta(Material m) { return count(m,after)+count(m,containerAfter)-count(m,before)-count(m,containerBefore); }
+        public int netDelta(Material m) { return ConservationMath.netDelta(count(m,before), count(m,after), count(m,containerBefore), count(m,containerAfter)); }
         public int playerDelta(Material m) { return count(m,after)-count(m,before); }
         public int containerDelta(Material m) { return count(m,containerAfter)-count(m,containerBefore); }
         public int duplicatedShulkerStacks() {
