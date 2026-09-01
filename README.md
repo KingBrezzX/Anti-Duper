@@ -1,4 +1,4 @@
-# BedrockAntiDupe 2.4.0
+# BedrockAntiDupe 2.5.0
 
 Premium all-in-one inventory-integrity and anti-duplication protection for **Paper 26.2 / Java 25**.
 
@@ -19,6 +19,11 @@ Paper 26.2 uses Java 25. This project intentionally does **not** target Java 21 
 - Inventory click and drag protection
 - Hopper/container-to-player transaction monitoring
 - Shulker box protection for all colors
+- Paper 26.2 Data Component-aware item fingerprints
+- Append-only persistent transaction journal
+- Pending transaction queue (no per-player overwrite)
+- Durable recovery-before-removal safety gate
+- Player-quit transaction flush
 - Shulker content-aware fingerprints
 - Evidence logging
 - Safe recovery backups before automatic removal
