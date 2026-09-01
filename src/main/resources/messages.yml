@@ -1,9 +1,3 @@
-# ============================================================
-# BedrockAntiDupe
-# Messages
-# Version 2.0.0
-# ============================================================
-
 prefix: "&8[&bAntiDupe&8] &r"
 
 general:
@@ -24,92 +18,43 @@ status:
   footer: "&8&m-----------------------------"
 
 dupe:
-  suspicious:
-    "&eAktivitas inventory mencurigakan terdeteksi. Sistem sedang melakukan verifikasi."
-
-  confirmed:
-    "&c&lDUPE TERKONFIRMASI!"
-    "&7Item yang terdeteksi: &f%item%"
-    "&7Jumlah: &f%amount%"
-    "&7Tindakan: &f%action%"
-
-  item-removed:
-    "&c%amount%x %item% telah dihapus karena duplikasi terkonfirmasi."
-
-  no-action:
-    "&aTidak ada tindakan yang diperlukan."
-
-  transaction-missing:
-    "&eTransaksi tidak dapat diverifikasi. Tidak ada item yang dihapus."
+  suspicious: "&eAktivitas inventory mencurigakan terdeteksi. Sistem sedang melakukan verifikasi."
+  confirmed: "&c&lDUPE TERKONFIRMASI! &7%item% x%amount% &8(%action%)"
+  item-removed: "&c%amount%x %item% telah dihapus karena duplikasi terkonfirmasi."
+  no-action: "&aTidak ada tindakan yang diperlukan."
+  transaction-missing: "&eTransaksi tidak dapat diverifikasi. Tidak ada item yang dihapus."
 
 economy:
-  rollback-start:
-    "&eTransaksi ekonomi sedang diverifikasi."
-
-  rollback-success:
-    "&aRollback ekonomi berhasil."
-    "&7Jumlah dikembalikan: &f$%amount%"
-
-  rollback-failed:
-    "&cRollback ekonomi gagal."
-    "&7Tidak ada perubahan uang yang dilakukan karena transaksi tidak dapat diverifikasi."
-
-  transaction-not-found:
-    "&eTransaksi penjualan tidak ditemukan. Uang tidak disentuh."
-
-  invalid-amount:
-    "&cJumlah rollback tidak valid. Tidak ada perubahan ekonomi."
+  rollback-start: "&eTransaksi ekonomi sedang diverifikasi."
+  rollback-success: "&aRollback ekonomi berhasil: &f$%amount%"
+  rollback-failed: "&cRollback ekonomi gagal. Tidak ada perubahan uang yang dilakukan."
+  transaction-not-found: "&eTransaksi penjualan tidak ditemukan. Uang tidak disentuh."
+  invalid-amount: "&cJumlah rollback tidak valid. Tidak ada perubahan ekonomi."
 
 discord:
-  enabled:
-    "&aDiscord notification aktif."
-
-  disabled:
-    "&eDiscord notification nonaktif."
-
-  invalid-webhook:
-    "&cDiscord webhook tidak valid."
-
-  sent:
-    "&aNotifikasi Discord berhasil dikirim."
-
-  failed:
-    "&cGagal mengirim notifikasi Discord."
+  enabled: "&aDiscord notification aktif."
+  disabled: "&eDiscord notification nonaktif."
+  invalid-webhook: "&cDiscord webhook tidak valid."
+  sent: "&aNotifikasi Discord berhasil dikirim."
+  failed: "&cGagal mengirim notifikasi Discord."
 
 admin:
-  reload:
-    "&aConfiguration berhasil dimuat ulang."
-
-  scan-start:
-    "&ePemeriksaan anti-dupe dimulai..."
-
-  scan-complete:
-    "&aPemeriksaan selesai."
-
-  debug-enabled:
-    "&aDebug mode diaktifkan."
-
-  debug-disabled:
-    "&eDebug mode dinonaktifkan."
+  reload: "&aConfiguration berhasil dimuat ulang."
+  scan-start: "&ePemeriksaan anti-dupe dimulai..."
+  scan-complete: "&aPemeriksaan selesai."
+  debug-enabled: "&aDebug mode diaktifkan."
+  debug-disabled: "&eDebug mode dinonaktifkan."
 
 errors:
-  internal:
-    "&cTerjadi kesalahan internal AntiDupe."
-
-  transaction:
-    "&cTerjadi kesalahan saat memproses transaksi."
-
-  economy-provider:
-    "&cProvider ekonomi tidak tersedia."
-
-  configuration:
-    "&cKonfigurasi AntiDupe tidak valid."
+  internal: "&cTerjadi kesalahan internal AntiDupe."
+  transaction: "&cTerjadi kesalahan saat memproses transaksi."
+  economy-provider: "&cProvider ekonomi tidak tersedia."
+  configuration: "&cKonfigurasi AntiDupe tidak valid."
 
 placeholders:
   status:
     enabled: "&aAKTIF"
     disabled: "&cNONAKTIF"
-
   boolean:
     yes: "&aYA"
     no: "&cTIDAK"

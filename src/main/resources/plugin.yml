@@ -1,44 +1,30 @@
 name: BedrockAntiDupe
-version: 2.0.0
+version: 2.1.0
 main: xyz.zyrex.bedrockantidupe.BedrockAntiDupe
-
 api-version: '26.2'
-
-name-prefix: AntiDupe
-
 author: Zyrex
-description: Advanced anti-duplication protection for Paper 26.2.
+description: Production anti-duplication protection for Paper 26.2.
 website: https://github.com/KingBrezzX/Anti-Duper
-
 softdepend:
   - Vault
   - floodgate
   - Geyser-Spigot
-
 commands:
-
   antidupe:
-    description: Main BedrockAntiDupe administration command.
-    usage: /antidupe <reload|status|scan|debug>
+    description: BedrockAntiDupe administration command.
+    usage: /antidupe <reload|status|scan|cleanup|history|debug>
     permission: bedrockantidupe.admin
-    aliases:
-      - adupe
-      - badupe
-
+    aliases: [adupe, badupe]
 permissions:
-
   bedrockantidupe.admin:
     description: Access to BedrockAntiDupe administration commands.
     default: op
-
   bedrockantidupe.notify:
     description: Receive confirmed anti-dupe notifications.
     default: op
-
   bedrockantidupe.debug:
     description: Access anti-dupe debug information.
     default: op
-
   bedrockantidupe.bypass:
-    description: Bypass anti-dupe detection. Only for trusted testing.
+    description: Bypass anti-dupe detection for trusted testing.
     default: false
