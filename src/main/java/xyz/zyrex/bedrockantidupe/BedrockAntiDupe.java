@@ -54,7 +54,7 @@ public final class BedrockAntiDupe extends JavaPlugin {
         registerCommands();
         startMaintenanceTask();
 
-        getLogger().info("BedrockAntiDupe 2.6.0 enabled | Paper 26.2 | Java 25");
+        getLogger().info("BedrockAntiDupe 2.7.0 enabled | Paper 26.2 | Java 25");
         getLogger().info("Detection: " + getConfig().getBoolean("detection.enabled", true));
         getLogger().info("Shulker protection: " + getConfig().getBoolean("shulker.enabled", true));
         getLogger().info("Vault economy: " + economyRollbackManager.isAvailable());

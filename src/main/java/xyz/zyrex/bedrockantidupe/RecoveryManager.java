@@ -12,6 +12,7 @@ import java.util.Base64;
 public final class RecoveryManager {
     private final BedrockAntiDupe plugin;
     private final File directory;
+    private final java.util.Set<UUID> restoring = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
     public RecoveryManager(BedrockAntiDupe plugin) {
         this.plugin = plugin;
@@ -58,9 +59,18 @@ public final class RecoveryManager {
 
     public boolean restore(Player player, UUID transactionId) {
         if (player == null || transactionId == null) return false;
+        if (!restoring.add(transactionId)) return false;
         Path file = new File(directory, transactionId + ".recovery").toPath();
-        if (!Files.isRegularFile(file)) return false;
-        try (DataInputStream in = new DataInputStream(new BufferedInputStream(Files.newInputStream(file)))) {
+        Path restoringFile = new File(directory, transactionId + ".restoring").toPath();
+        try {
+            if (!Files.isRegularFile(file)) return false;
+            try {
+                Files.move(file, restoringFile, StandardCopyOption.ATOMIC_MOVE);
+            } catch (AtomicMoveNotSupportedException ex) {
+                Files.move(file, restoringFile, StandardCopyOption.REPLACE_EXISTING);
+            }
+            file = restoringFile;
+            try (DataInputStream in = new DataInputStream(new BufferedInputStream(Files.newInputStream(file)))) {
             int version = in.readInt();
             if (version != 1) return false;
             in.readUTF(); // player UUID is retained in the recovery record for auditing.
@@ -77,11 +87,15 @@ public final class RecoveryManager {
                 restored = true;
             }
             if (!restored) return false;
-            Files.move(file, new File(directory, transactionId + ".restored").toPath(), StandardCopyOption.REPLACE_EXISTING);
-            return true;
+                Files.move(file, new File(directory, transactionId + ".restored").toPath(), StandardCopyOption.REPLACE_EXISTING);
+                return true;
+            }
         } catch (IOException | RuntimeException ex) {
             plugin.getLogger().warning("[AntiDupe] Recovery restore failed: " + ex.getMessage());
+            // Preserve an interrupted restore for manual recovery instead of silently replaying it.
             return false;
+        } finally {
+            restoring.remove(transactionId);
         }
     }
 

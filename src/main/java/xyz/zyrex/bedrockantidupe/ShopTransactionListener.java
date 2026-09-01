@@ -351,6 +351,17 @@ public final class ShopTransactionListener implements Listener {
                 );
     }
 
+    /** Records Paper 26.2 merchant purchase context without guessing price semantics. */
+    public void recordPurchaseContext(io.papermc.paper.event.player.PlayerPurchaseEvent event) {
+        if (event == null || event.getPlayer() == null || event.getTrade() == null) return;
+        org.bukkit.inventory.ItemStack result = event.getTrade().getResult();
+        String itemType = result == null || result.getType().isAir() ? "UNKNOWN" : result.getType().name();
+        int amount = result == null ? 0 : result.getAmount();
+        pending.put(event.getPlayer().getUniqueId(), new PendingShopTransaction(
+                UUID.randomUUID().toString(), event.getPlayer().getUniqueId(), itemType, amount,
+                "MERCHANT", -1, System.currentTimeMillis()));
+    }
+
     public record PendingShopTransaction(
 
             String transactionId,
