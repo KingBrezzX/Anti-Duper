@@ -87,7 +87,7 @@ public final class RecoveryManager {
 
     public List<String> list() {
         if (!directory.isDirectory()) return List.of();
-        try (DirectoryStream<Path> stream = Files.newDirectoryStream(directory, "*.recovery")) {
+        try (DirectoryStream<Path> stream = Files.newDirectoryStream(directory.toPath(), "*.recovery")) {
             List<String> ids = new ArrayList<>();
             for (Path path : stream) {
                 String name = path.getFileName().toString();

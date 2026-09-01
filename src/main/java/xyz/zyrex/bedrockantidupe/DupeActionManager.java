@@ -32,9 +32,15 @@ public final class DupeActionManager {
     }
 
     public DupeActionManager(BedrockAntiDupe plugin, DiscordAlertManager discord, EvidenceManager evidence) {
+        this(plugin, discord, evidence, null);
+    }
+
+    public DupeActionManager(BedrockAntiDupe plugin, DiscordAlertManager discord,
+                             EvidenceManager evidence, EconomyRollbackManager economyRollback) {
         this.plugin = plugin;
         this.discord = discord;
         this.evidence = evidence;
+        this.economyRollback = economyRollback;
     }
 
     /**
