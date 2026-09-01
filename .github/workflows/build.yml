@@ -33,7 +33,7 @@ jobs:
       - name: Verify release JAR
         shell: bash
         run: |
-          JAR="target/BedrockAntiDupe-2.6.0.jar"
+          JAR="target/BedrockAntiDupe-2.7.0.jar"
           test -f "$JAR"
           jar tf "$JAR" | grep -q '^plugin.yml$'
           jar tf "$JAR" | grep -q 'xyz/zyrex/bedrockantidupe/BedrockAntiDupe.class'
@@ -44,6 +44,6 @@ jobs:
       - name: Upload JAR
         uses: actions/upload-artifact@v4
         with:
-          name: BedrockAntiDupe-2.6.0
-          path: target/BedrockAntiDupe-2.6.0.jar
+          name: BedrockAntiDupe-2.7.0
+          path: target/BedrockAntiDupe-2.7.0.jar
           if-no-files-found: error
