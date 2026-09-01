@@ -11,6 +11,16 @@ import java.util.HexFormat;
 public final class ItemFingerprint {
     private ItemFingerprint() {}
 
+    public static String sha256Bytes(byte[] data) {
+        if (data == null) data = new byte[0];
+        try {
+            MessageDigest md = MessageDigest.getInstance("SHA-256");
+            return HexFormat.of().formatHex(md.digest(data));
+        } catch (Exception ex) {
+            throw new IllegalStateException("SHA-256 unavailable", ex);
+        }
+    }
+
     public static String sha256(ItemStack item) {
         if (item == null || item.getType().isAir()) return "AIR";
         try {
