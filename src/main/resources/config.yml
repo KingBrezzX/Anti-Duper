@@ -1,4 +1,4 @@
-# BedrockAntiDupe 2.3.0 | Paper 26.2
+# BedrockAntiDupe 2.5.0 | Paper 26.2 | Java 25
 settings:
   enabled: true
   require-confirmation: true
@@ -6,6 +6,7 @@ settings:
 
 detection:
   enabled: true
+  track-all-stackable-items: false
   # 1 catches even a single net-positive tracked item. Conservation is checked
   # across the player inventory + viewed container, so normal transfers remain net 0.
   instant-increase-threshold: 1
@@ -84,6 +85,15 @@ safety:
   require-economy-transaction: true
 
 # Premium protection modules
+journal:
+  enabled: true
+  directory: journal
+  max-size-mb: 128
+
+prevention:
+  shulker-duplicate-monitor: true
+  hopper-monitor: true
+
 protection:
   creative-events: false
   nested-shulker: true
