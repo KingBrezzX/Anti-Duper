@@ -47,6 +47,15 @@ public final class BedrockAntiDupe extends JavaPlugin {
         loadedContainerScanner = new LoadedContainerScanner(this);
         loadedContainerScanner.start();
 
+        // Live Paper API verification must run on the server main thread.
+        // If the target runtime cannot execute the required ItemStack/Data
+        // Component operations, fail closed instead of advertising a healthy plugin.
+        if (!PaperRuntimeSelfTest.run(this)) {
+            getLogger().severe("[AntiDupe] Paper runtime self-test failed; disabling plugin.");
+            Bukkit.getPluginManager().disablePlugin(this);
+            return;
+        }
+
         Bukkit.getPluginManager().registerEvents(exploitProtectionListener, this);
         Bukkit.getPluginManager().registerEvents(shopTransactionListener, this);
         Bukkit.getPluginManager().registerEvents(nativePreventionListener, this);

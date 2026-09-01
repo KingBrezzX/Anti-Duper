@@ -196,6 +196,33 @@ public final class EconomyRollbackManager {
     }
 
     /**
+     * Reads the player's economy balance when Vault and an economy provider
+     * are actually available. Returns null when the optional integration is
+     * unavailable, allowing core anti-dupe protection to operate normally.
+     *
+     * This method is intentionally kept behind the economy integration
+     * boundary so event listener classes do not have a hard Vault linkage.
+     */
+    public Double getBalance(Player player) {
+        if (player == null
+                || !plugin.getConfig().getBoolean("economy.enabled", true)
+                || !plugin.getConfig().getBoolean("economy.vault", true)) {
+            return null;
+        }
+
+        Economy economy = resolveEconomy();
+        if (economy == null) return null;
+
+        try {
+            double balance = economy.getBalance(player);
+            return Double.isFinite(balance) && balance >= 0.0D ? balance : null;
+        } catch (RuntimeException ex) {
+            plugin.getLogger().warning("[AntiDupe] Failed to read economy balance: " + ex.getMessage());
+            return null;
+        }
+    }
+
+    /**
      * Gets the Vault economy provider.
      */
     private Economy resolveEconomy() {
