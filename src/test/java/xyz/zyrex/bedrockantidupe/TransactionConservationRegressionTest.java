@@ -1,49 +1,36 @@
 package xyz.zyrex.bedrockantidupe;
 
-import org.bukkit.Material;
-import org.bukkit.inventory.ItemStack;
 import org.junit.jupiter.api.Test;
 
-import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+/** Pure unit tests; Bukkit/Paper registry state is tested by the Paper runtime smoke test. */
 class TransactionConservationRegressionTest {
     @Test
     void normalPlayerToContainerTransferIsNotNetPositive() {
-        UUID id = UUID.randomUUID();
-        ItemStack diamond = new ItemStack(Material.DIAMOND, 10);
-        var beforePlayer = Map.of(0, diamond);
-        var afterPlayer = Map.<Integer, ItemStack>of();
-        var beforeContainer = Map.<Integer, ItemStack>of();
-        var afterContainer = Map.of(0, diamond.clone());
-        var tx = new TransactionLedger.TransactionRecord(id, id, "INVENTORY_CLICK", beforePlayer, afterPlayer,
-                beforeContainer, afterContainer, List.of(new TransactionLedger.ItemChange(0, diamond, null)),
-                List.of(new TransactionLedger.ItemChange(0, null, diamond.clone())), System.currentTimeMillis());
-        assertEquals(0, tx.netDelta(Material.DIAMOND));
-        assertEquals(-10, tx.playerDelta(Material.DIAMOND));
-        assertEquals(10, tx.containerDelta(Material.DIAMOND));
+        var beforePlayer = Map.of("DIAMOND", 10);
+        var afterPlayer = Map.<String, Integer>of();
+        var beforeContainer = Map.<String, Integer>of();
+        var afterContainer = Map.of("DIAMOND", 10);
+        assertEquals(0, ConservationMath.netDelta(beforePlayer, afterPlayer, beforeContainer, afterContainer, "DIAMOND"));
+        assertEquals(-10, ConservationMath.playerDelta(beforePlayer, afterPlayer, "DIAMOND"));
+        assertEquals(10, ConservationMath.containerDelta(beforeContainer, afterContainer, "DIAMOND"));
     }
 
     @Test
     void duplicatedTrackedItemProducesPositiveConservationDelta() {
-        UUID id = UUID.randomUUID();
-        ItemStack before = new ItemStack(Material.DIAMOND, 10);
-        ItemStack after = new ItemStack(Material.DIAMOND, 11);
-        var tx = new TransactionLedger.TransactionRecord(id, id, "INVENTORY_CLICK",
-                Map.of(0, before), Map.of(0, after), Map.of(), Map.of(),
-                List.of(new TransactionLedger.ItemChange(0, before, after)), List.of(), System.currentTimeMillis());
-        assertEquals(1, tx.netDelta(Material.DIAMOND));
-        assertTrue(tx.hasPositiveIncrease());
+        var before = Map.of("DIAMOND", 10);
+        var after = Map.of("DIAMOND", 11);
+        assertEquals(1, ConservationMath.netDelta(before, after, Map.of(), Map.of(), "DIAMOND"));
+        assertTrue(ConservationMath.netDelta(before, after, Map.of(), Map.of(), "DIAMOND") > 0);
     }
 
     @Test
-    void fingerprintChangesWhenItemStateChanges() {
-        ItemStack a = new ItemStack(Material.DIAMOND, 1);
-        ItemStack b = a.clone();
-        b.setAmount(2);
-        assertNotEquals(ItemFingerprint.sha256(a), ItemFingerprint.sha256(b));
+    void fingerprintChangesWhenSerializedItemStateChanges() {
+        byte[] a = new byte[] {1, 2, 3, 4};
+        byte[] b = new byte[] {1, 2, 3, 5};
+        assertNotEquals(ItemFingerprint.sha256Bytes(a), ItemFingerprint.sha256Bytes(b));
     }
 }

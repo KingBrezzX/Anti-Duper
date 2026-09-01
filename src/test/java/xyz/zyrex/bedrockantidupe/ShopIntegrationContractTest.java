@@ -1,7 +1,5 @@
 package xyz.zyrex.bedrockantidupe;
 
-import org.bukkit.Material;
-import org.bukkit.inventory.ItemStack;
 import org.junit.jupiter.api.Test;
 
 import java.util.UUID;
@@ -13,7 +11,7 @@ class ShopIntegrationContractTest {
     void economyTransactionCarriesStableIdentityAndExactValue() {
         UUID player = UUID.randomUUID();
         UUID tx = UUID.randomUUID();
-        EconomyTransaction value = new EconomyTransaction(tx, player, 25.0, true, true, "EXTERNAL_SHOP", Material.DIAMOND.name(), 3);
+        EconomyTransaction value = new EconomyTransaction(tx, player, 25.0, true, true, "EXTERNAL_SHOP", "DIAMOND", 3);
         assertEquals(tx, value.transactionId());
         assertEquals(player, value.playerId());
         assertEquals(25.0, value.rollbackAmount(), 1e-9);
@@ -22,8 +20,10 @@ class ShopIntegrationContractTest {
 
     @Test
     void shopResultIdentityCanBeFingerprintChecked() {
-        ItemStack result = new ItemStack(Material.DIAMOND, 3);
-        assertNotNull(ItemFingerprint.sha256(result));
-        assertFalse(ItemFingerprint.sha256(result).isBlank());
+        byte[] serializedResult = new byte[] {0x01, 0x03, 0x44, 0x49, 0x41, 0x4d, 0x4f, 0x4e, 0x44};
+        String fingerprint = ItemFingerprint.sha256Bytes(serializedResult);
+        assertNotNull(fingerprint);
+        assertFalse(fingerprint.isBlank());
+        assertEquals(64, fingerprint.length());
     }
 }
