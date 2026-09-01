@@ -12,4 +12,3 @@ The plugin exposes a generic transaction identity/adapter boundary. A third-part
 8. verify inventory and economy conservation
 
 Do not label an unspecified shop as compatible. Put the exact plugin name/version in the release report.
-
