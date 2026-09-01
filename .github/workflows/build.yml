@@ -28,6 +28,26 @@ jobs:
           java-version: "25"
           cache: maven
 
+      - name: Verify English user-facing resources
+        run: |
+          set -euo pipefail
+          python3 - <<'PY2'
+          from pathlib import Path
+          import re
+
+          paths = [
+              Path("src/main/resources/messages.yml"),
+              Path("src/main/resources/config.yml"),
+              Path("src/main/resources/plugin.yml"),
+          ]
+          forbidden = re.compile(r"\b(Kamu|tidak|berhasil|aktif|nonaktif|Gagal|Pemeriksaan|YA|TIDAK)\b", re.IGNORECASE)
+          for path in paths:
+              text = path.read_text(encoding="utf-8")
+              if forbidden.search(text):
+                  raise SystemExit(f"Non-English user-facing text found in {path}")
+          print("English resource check: PASS")
+          PY2
+
       - name: Verify Java
         run: |
           set -euo pipefail
@@ -140,7 +160,7 @@ jobs:
           fi
 
           echo "SHA-256:"
-          sha256sum "$JAR"
+          sha256sum "$JAR" | tee target/BedrockAntiDupe.sha256
 
       - name: Download official Paper 26.2
         run: |
@@ -408,6 +428,7 @@ jobs:
           name: BedrockAntiDupe-${{ github.sha }}
           path: |
             target/BedrockAntiDupe-*.jar
+            target/BedrockAntiDupe.sha256
             target/surefire-reports/**
           if-no-files-found: error
           retention-days: 14

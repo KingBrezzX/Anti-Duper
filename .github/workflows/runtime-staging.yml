@@ -14,8 +14,7 @@ on:
         type: string
       shop_name:
         description: 'Exact third-party shop plugin being tested'
-        required: false
-        default: 'NONE'
+        required: true
         type: string
 
 permissions:
@@ -23,17 +22,35 @@ permissions:
 
 jobs:
   gate:
+    name: Manual real-runtime release gate
     runs-on: ubuntu-latest
     environment: staging
     steps:
       - uses: actions/checkout@v5
-      - name: Runtime gate policy
+
+      - name: Verify staging inputs
         run: |
-          echo "Paper 26.2 / Java 25 runtime gate prepared."
+          set -euo pipefail
+          test -n "${{ inputs.staging_host }}"
+          test -n "${{ inputs.shop_name }}"
+          echo "Staging host supplied."
           echo "Shop target: ${{ inputs.shop_name }}"
-          echo "A real-player client test and a disposable staging server are mandatory."
-      - name: Publish gate instructions
+
+      - name: Print reproducible test procedures
         run: |
+          set -euo pipefail
+          echo "=== REAL PLAYER REGRESSION ==="
           cat scripts/player-regression.md
-          cat scripts/shop-compatibility.md
+          echo
+          echo "=== POWER LOSS ==="
           cat scripts/power-loss-smoke.sh
+          echo
+          echo "=== SHOP COMPATIBILITY ==="
+          cat scripts/shop-compatibility.md
+
+      - name: Release gate policy
+        run: |
+          set -euo pipefail
+          echo "This workflow does not fabricate player/client results."
+          echo "A human/operator must execute the staging procedures on the supplied environment."
+          echo "Do NOT mark production READY until the recorded staging evidence is attached to the release audit."
