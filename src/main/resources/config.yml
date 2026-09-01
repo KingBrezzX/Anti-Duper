@@ -1,4 +1,4 @@
-# BedrockAntiDupe 2.7.0 | Paper 26.2 | Java 25
+# BedrockAntiDupe 2.7.3 | Paper 26.2 | Java 25
 settings:
   enabled: true
   require-confirmation: true

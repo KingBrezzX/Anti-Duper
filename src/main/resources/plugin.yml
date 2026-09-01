@@ -1,14 +1,12 @@
 name: BedrockAntiDupe
-version: 2.7.0
+version: 2.7.4
 main: xyz.zyrex.bedrockantidupe.BedrockAntiDupe
 api-version: '26.2'
 author: KingBrezzX
-description: Premium all-in-one anti-duplication and inventory integrity protection for Paper 26.2.
+description: Premium all-in-one anti-duplication and inventory integrity protection for Paper 26.2 Java Edition.
 website: https://github.com/KingBrezzX/Anti-Duper
 softdepend:
   - Vault
-  - floodgate
-  - Geyser-Spigot
 commands:
   antidupe:
     description: BedrockAntiDupe administration command.
