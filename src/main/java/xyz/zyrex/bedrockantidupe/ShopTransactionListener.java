@@ -60,8 +60,11 @@ public final class ShopTransactionListener implements Listener {
             return;
         }
 
-        String transactionId =
-                UUID.randomUUID().toString();
+        // Correlate the shop context with the transaction snapshot created
+        // by ExploitProtectionListener. Never invent a second unrelated ID.
+        TransactionLedger.TransactionSnapshot active = ledger.getActive(player.getUniqueId());
+        if (active == null) return;
+        String transactionId = active.transactionId().toString();
 
         ItemStack cursor =
                 event.getCursor();
@@ -146,6 +149,18 @@ public final class ShopTransactionListener implements Listener {
      * This method is intended to be called by a dedicated
      * shop/economy integration when it knows the exact price.
      */
+    /**
+     * Public integration point for third-party shop plugins.
+     * The caller supplies the exact transaction identity and item result;
+     * AntiDupe never infers a price from a GUI title.
+     */
+    public void recordExternalShopTransaction(UUID playerId, UUID transactionId, String source, ItemStack result) {
+        if (playerId == null || transactionId == null || result == null || result.getType().isAir()) return;
+        pending.put(playerId, new PendingShopTransaction(
+                transactionId.toString(), playerId, result.getType().name(), result.getAmount(),
+                source == null || source.isBlank() ? "EXTERNAL_SHOP" : source, -1, System.currentTimeMillis()));
+    }
+
     public void recordEconomyTransaction(
             EconomyTransaction transaction
     ) {
@@ -357,8 +372,13 @@ public final class ShopTransactionListener implements Listener {
         org.bukkit.inventory.ItemStack result = event.getTrade().getResult();
         String itemType = result == null || result.getType().isAir() ? "UNKNOWN" : result.getType().name();
         int amount = result == null ? 0 : result.getAmount();
-        pending.put(event.getPlayer().getUniqueId(), new PendingShopTransaction(
-                UUID.randomUUID().toString(), event.getPlayer().getUniqueId(), itemType, amount,
+        UUID playerId = event.getPlayer().getUniqueId();
+        TransactionLedger.TransactionSnapshot active = ledger.getActive(playerId);
+        String transactionId = active != null
+                ? active.transactionId().toString()
+                : UUID.randomUUID().toString();
+        pending.put(playerId, new PendingShopTransaction(
+                transactionId, playerId, itemType, amount,
                 "MERCHANT", -1, System.currentTimeMillis()));
     }
 

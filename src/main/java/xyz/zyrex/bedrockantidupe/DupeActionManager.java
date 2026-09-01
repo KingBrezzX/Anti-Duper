@@ -211,9 +211,18 @@ public final class DupeActionManager {
         }
         if (plan.isEmpty()) return 0;
 
-        java.util.List<ItemStack> backup = plan.stream().map(PlannedRemoval::item).toList();
         UUID transactionId = result.transaction().transactionId();
-        if (!plugin.getRecoveryManager().backupSync(player.getUniqueId(), transactionId, backup, result.reason())) {
+        java.util.List<RecoveryManager.RecoveryEntry> backup = plan.stream().map(p -> {
+            ItemStack before = player.getInventory().getItem(p.slot());
+            ItemStack after = before == null ? null : before.clone();
+            if (after != null) {
+                int next = after.getAmount() - p.amount();
+                after = next <= 0 ? null : after.clone();
+                if (after != null) after.setAmount(next);
+            }
+            return new RecoveryManager.RecoveryEntry(p.slot(), before == null ? null : before.clone(), after, p.item().clone());
+        }).toList();
+        if (!plugin.getRecoveryManager().backupSyncEntries(player.getUniqueId(), transactionId, backup, result.reason())) {
             plugin.getLogger().severe("[AntiDupe] Removal aborted: recovery backup could not be durably written.");
             return 0;
         }
@@ -316,63 +325,11 @@ public final class DupeActionManager {
      * Floodgate is checked through its Bukkit plugin presence.
      * If Floodgate is unavailable, the player is treated as Java.
      */
-    private String detectPlatform(
-            Player player
-    ) {
-
-        if (player == null) {
-            return "UNKNOWN";
-        }
-
-        if (plugin.getServer()
-                .getPluginManager()
-                .getPlugin("floodgate") != null) {
-
-            try {
-
-                Class<?> apiClass =
-                        Class.forName(
-                                "org.geysermc.floodgate.api.FloodgateApi"
-                        );
-
-                Object api =
-                        apiClass
-                                .getMethod(
-                                        "getInstance"
-                                )
-                                .invoke(null);
-
-                Object bedrock =
-                        apiClass
-                                .getMethod(
-                                        "isFloodgatePlayer",
-                                        UUID.class
-                                )
-                                .invoke(
-                                        api,
-                                        player.getUniqueId()
-                                );
-
-                if (bedrock instanceof Boolean
-                        && (Boolean) bedrock) {
-
-                    return "BEDROCK";
-                }
-
-            } catch (
-                    ReflectiveOperationException
-                            | LinkageError ignored
-            ) {
-
-                /*
-                 * Floodgate API is optional.
-                 * Do not fail the anti-dupe plugin if the API
-                 * changes or is unavailable.
-                 */
-            }
-        }
-
-        return "JAVA";
+    private String detectPlatform(Player player) {
+        // This release explicitly targets Java Edition. Do not load or reflect
+        // into Geyser/Floodgate APIs, which would make runtime behavior depend
+        // on unrelated Bedrock plugins.
+        return player == null ? "UNKNOWN" : "JAVA";
     }
 
     /**

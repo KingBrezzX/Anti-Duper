@@ -14,6 +14,7 @@ import java.util.concurrent.TimeUnit;
 public final class TransactionJournal implements AutoCloseable {
     private final BedrockAntiDupe plugin;
     private final Path file;
+    private final Object writeLock = new Object();
     private final ExecutorService writer = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "BedrockAntiDupe-Journal");
         t.setDaemon(true); return t;
@@ -40,17 +41,19 @@ public final class TransactionJournal implements AutoCloseable {
     }
 
     private boolean write(String line, boolean force) {
-        try {
-            Files.createDirectories(file.getParent());
-            try (FileChannel channel = FileChannel.open(file, StandardOpenOption.CREATE, StandardOpenOption.WRITE, StandardOpenOption.APPEND)) {
-                channel.write(ByteBuffer.wrap(line.getBytes(StandardCharsets.UTF_8)));
-                if (force) channel.force(true);
+        synchronized (writeLock) {
+            try {
+                Files.createDirectories(file.getParent());
+                try (FileChannel channel = FileChannel.open(file, StandardOpenOption.CREATE, StandardOpenOption.WRITE, StandardOpenOption.APPEND)) {
+                    channel.write(ByteBuffer.wrap(line.getBytes(StandardCharsets.UTF_8)));
+                    if (force) channel.force(true);
+                }
+                enforceSizeLimit();
+                return true;
+            } catch (IOException ex) {
+                plugin.getLogger().warning("[AntiDupe] Journal write failed: " + ex.getMessage());
+                return false;
             }
-            enforceSizeLimit();
-            return true;
-        } catch (IOException ex) {
-            plugin.getLogger().warning("[AntiDupe] Journal write failed: " + ex.getMessage());
-            return false;
         }
     }
 

@@ -24,7 +24,12 @@ public final class ItemFingerprint {
             md.update(item.serializeAsBytes());
             return HexFormat.of().formatHex(md.digest());
         } catch (Exception ex) {
-            return HexFormat.of().formatHex(item.toString().getBytes(StandardCharsets.UTF_8));
+            try {
+                MessageDigest fallback = MessageDigest.getInstance("SHA-256");
+                return HexFormat.of().formatHex(fallback.digest(item.toString().getBytes(StandardCharsets.UTF_8)));
+            } catch (Exception ignored) {
+                return Integer.toHexString(item.toString().hashCode());
+            }
         }
     }
 

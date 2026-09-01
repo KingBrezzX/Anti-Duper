@@ -29,15 +29,20 @@ public final class TransactionLedger {
         ConcurrentLinkedDeque<TransactionSnapshot> queue = active.computeIfAbsent(id, k -> new ConcurrentLinkedDeque<>());
         long burst = Math.max(0L, plugin.getConfig().getLong("protection.burst-window-ms", 75L));
         long now = System.currentTimeMillis();
+        int viewedIdentity = inventoryIdentity(viewedInventory);
         for (TransactionSnapshot existing : queue) {
-            if (now - existing.timestamp() <= burst) return existing;
+            if (now - existing.timestamp() <= burst
+                    && existing.viewedInventoryIdentity() == viewedIdentity
+                    && Objects.equals(existing.source(), source == null ? "UNKNOWN" : source)) {
+                return existing;
+            }
         }
         int maxPending = Math.max(1, plugin.getConfig().getInt("protection.max-pending-transactions", 64));
         while (queue.size() >= maxPending) queue.pollFirst();
         TransactionSnapshot snapshot = new TransactionSnapshot(
                 UUID.randomUUID(), id, source == null ? "UNKNOWN" : source,
                 snapshotInventory(player.getInventory()), snapshotInventory(viewedInventory),
-                System.currentTimeMillis(), tick);
+                viewedIdentity, System.currentTimeMillis(), tick);
         queue.addLast(snapshot);
         return snapshot;
     }
@@ -73,8 +78,16 @@ public final class TransactionLedger {
     public List<TransactionRecord> finishAll(Player player) {
         if (player == null) return List.of();
         List<TransactionRecord> out = new ArrayList<>();
+        Inventory openTop = null;
+        try {
+            if (player.getOpenInventory() != null) {
+                Inventory candidate = player.getOpenInventory().getTopInventory();
+                if (candidate != null && candidate != player.getInventory()) openTop = candidate;
+            }
+        } catch (RuntimeException ignored) { }
         for (TransactionSnapshot snapshot : getPending(player.getUniqueId())) {
-            TransactionRecord record = finish(player, null, snapshot.transactionId());
+            Inventory viewed = snapshot.viewedInventoryIdentity() == inventoryIdentity(openTop) ? openTop : null;
+            TransactionRecord record = finish(player, viewed, snapshot.transactionId());
             if (record != null) out.add(record);
         }
         return out;
@@ -94,6 +107,10 @@ public final class TransactionLedger {
     }
     public void clear() { active.clear(); history.clear(); }
 
+    private static int inventoryIdentity(Inventory inventory) {
+        return inventory == null ? 0 : System.identityHashCode(inventory);
+    }
+
     static Map<Integer, ItemStack> snapshotInventory(Inventory inventory) {
         Map<Integer, ItemStack> result = new HashMap<>();
         if (inventory == null) return result;
@@ -108,7 +125,7 @@ public final class TransactionLedger {
     public record TransactionSnapshot(UUID transactionId, UUID playerId, String source,
                                       Map<Integer, ItemStack> playerContents,
                                       Map<Integer, ItemStack> containerContents,
-                                      long timestamp, long tick) {
+                                      int viewedInventoryIdentity, long timestamp, long tick) {
         public TransactionSnapshot {
             playerContents = immutable(playerContents); containerContents = immutable(containerContents);
         }

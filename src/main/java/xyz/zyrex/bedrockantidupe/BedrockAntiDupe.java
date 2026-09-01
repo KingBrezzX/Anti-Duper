@@ -54,7 +54,7 @@ public final class BedrockAntiDupe extends JavaPlugin {
         registerCommands();
         startMaintenanceTask();
 
-        getLogger().info("BedrockAntiDupe 2.7.0 enabled | Paper 26.2 | Java 25");
+        getLogger().info("BedrockAntiDupe 2.7.4 enabled | Paper 26.2 | Java 25");
         getLogger().info("Detection: " + getConfig().getBoolean("detection.enabled", true));
         getLogger().info("Shulker protection: " + getConfig().getBoolean("shulker.enabled", true));
         getLogger().info("Vault economy: " + economyRollbackManager.isAvailable());
@@ -66,6 +66,14 @@ public final class BedrockAntiDupe extends JavaPlugin {
     public void onDisable() {
         if (maintenanceTask != null) maintenanceTask.cancel();
         if (loadedContainerScanner != null) loadedContainerScanner.stop();
+
+        // Close the transaction fence before clearing in-memory state so a
+        // graceful server shutdown cannot silently discard pending snapshots.
+        if (transactionLedger != null) {
+            for (Player player : Bukkit.getOnlinePlayers()) {
+                transactionLedger.finishAll(player);
+            }
+        }
         if (exploitProtectionListener != null) exploitProtectionListener.clear();
         if (shopTransactionListener != null) shopTransactionListener.clearAll();
         if (dupeActionManager != null) dupeActionManager.clear();

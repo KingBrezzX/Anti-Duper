@@ -41,12 +41,16 @@ public record RollbackResult(
             status = Status.FAILED;
         }
 
-        if (requestedAmount < 0) {
+        if (!Double.isFinite(requestedAmount) || requestedAmount < 0) {
             requestedAmount = 0;
         }
 
-        if (rolledBackAmount < 0) {
+        if (!Double.isFinite(rolledBackAmount) || rolledBackAmount < 0) {
             rolledBackAmount = 0;
+        }
+
+        if (rolledBackAmount > requestedAmount) {
+            rolledBackAmount = requestedAmount;
         }
 
         if (message == null) {
